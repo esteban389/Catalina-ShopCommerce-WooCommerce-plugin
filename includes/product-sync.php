@@ -345,13 +345,86 @@ function shopcommerce_mass_insert_update_products($products, $brand) {
         $existing_product = $existing_products_cache[$sku];
 
         if ($existing_product) {
-          // Update existing product
-          $wc_product->set_id($existing_product->get_id());
-          $wc_product->save();
+          // Update existing product - work directly with the existing product object
+          $product_id = $existing_product->get_id();
+
+          // Update the existing product's properties directly
+          $existing_product->set_name(isset($product_data['Name']) ? sanitize_text_field($product_data['Name']) : '');
+          $existing_product->set_description(isset($product_data['Description']) ? wp_kses_post($product_data['Description']) : '');
+
+          // Set price if available
+          if (isset($product_data['precio']) && is_numeric($product_data['precio'])) {
+            $existing_product->set_regular_price(floatval($product_data['precio']));
+            $existing_product->set_price(floatval($product_data['precio']));
+          }
+
+          // Update stock status and quantity
+          if (isset($product_data['Quantity']) && is_numeric($product_data['Quantity'])) {
+            $existing_product->set_stock_quantity(intval($product_data['Quantity']));
+            $existing_product->set_stock_status($product_data['Quantity'] > 0 ? 'instock' : 'outofstock');
+          }
+
+          // Update external provider metadata
+          $existing_product->update_meta_data('_external_provider_brand', $brand);
+          $existing_product->update_meta_data('_external_provider_sync_date', current_time('mysql'));
+
+          // Update additional metadata
+          if (isset($product_data['Marks'])) {
+            $existing_product->update_meta_data('_shopcommerce_marca', sanitize_text_field($product_data['Marks']));
+          }
+
+          if (isset($product_data['Categoria'])) {
+            $existing_product->update_meta_data('_shopcommerce_categoria', sanitize_text_field($product_data['Categoria']));
+          }
+
+          // Handle categories
+          if (isset($product_data['Categoria']) || isset($product_data['CategoriaDescripcion'])) {
+            $category_name = isset($product_data['CategoriaDescripcion']) ?
+              sanitize_text_field($product_data['CategoriaDescripcion']) :
+              sanitize_text_field($product_data['Categoria']);
+
+            if (!empty($category_name)) {
+              $category_id = shopcommerce_get_or_create_category($category_name);
+              if ($category_id) {
+                $existing_product->set_category_ids([$category_id]);
+              }
+            }
+          }
+
+          // Handle image updates with timestamp checking
+          if (isset($product_data['Imagenes']) && !empty($product_data['Imagenes'])) {
+            $image_url = $product_data['Imagenes'][0];
+            $current_image_id = $existing_product->get_image_id();
+            $last_image_update = $existing_product->get_meta('_external_image_last_updated');
+
+            // Only update image if URL has changed or hasn't been updated in 24 hours
+            $update_image = false;
+            if (!$current_image_id) {
+              $update_image = true; // No image set
+            } else {
+              $current_image_url = get_post_meta($current_image_id, '_external_image_url', true);
+              if ($current_image_url !== $image_url) {
+                $update_image = true; // URL has changed
+              } elseif (!$last_image_update || (time() - strtotime($last_image_update)) > 24 * 60 * 60) {
+                $update_image = true; // Haven't updated in 24 hours
+              }
+            }
+
+            if ($update_image) {
+              $new_image_id = shopcommerce_attach_product_image($image_url, $existing_product->get_name());
+              if ($new_image_id) {
+                $existing_product->set_image_id($new_image_id);
+                $existing_product->update_meta_data('_external_image_last_updated', current_time('mysql'));
+              }
+            }
+          }
+
+          // Save the updated product
+          $existing_product->save();
           $results['updated']++;
 
           error_log(sprintf('[ShopCommerce Sync] Updated product ID %d (SKU: %s)',
-            $existing_product->get_id(),
+            $product_id,
             $sku
           ));
 
@@ -359,7 +432,7 @@ function shopcommerce_mass_insert_update_products($products, $brand) {
           if ($results['updated'] % 10 === 0 && function_exists('shopcommerce_log_activity')) {
             shopcommerce_log_activity('product_updated', 'Batch product update progress', [
               'brand' => $brand,
-              'product_id' => $existing_product->get_id(),
+              'product_id' => $product_id,
               'sku' => $sku,
               'total_updated' => $results['updated']
             ]);
@@ -528,6 +601,7 @@ function shopcommerce_map_to_woocommerce_product($product_data, $brand) {
     $image_id = shopcommerce_attach_product_image($product_data['Imagenes'][0], $wc_product->get_name());
     if ($image_id) {
       $wc_product->set_image_id($image_id);
+      $wc_product->update_meta_data('_external_image_last_updated', current_time('mysql'));
     }
   }
 
@@ -602,7 +676,7 @@ function shopcommerce_attach_product_image($image_url, $product_name) {
   // Get file info
   $file_info = wp_check_filetype_and_ext(basename($image_url), 'image');
   if (!$file_info['type'] || !in_array($file_info['type'], ['image/jpeg', 'image/jpg', 'image/png', 'image/gif'])) {
-    error_log('[ShopCommerce Sync] Invalid image type for URL: ' . $image_url);
+    error_log('[ShopCommerce Sync] Invalid image type for URL: ' . $image_url, ' | File info: ' . print_r($file_info, true));
     return null;
   }
 
