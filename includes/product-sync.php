@@ -473,21 +473,21 @@ function shopcommerce_map_to_woocommerce_product($product_data, $brand) {
 
   // Map basic product fields
   $wc_product->set_sku(isset($product_data['Sku']) ? sanitize_text_field($product_data['Sku']) : '');
-  $wc_product->set_name(isset($product_data['Nombre']) ? sanitize_text_field($product_data['Nombre']) : '');
-  $wc_product->set_description(isset($product_data['Descripcion']) ? wp_kses_post($product_data['Descripcion']) : '');
+  $wc_product->set_name(isset($product_data['Name']) ? sanitize_text_field($product_data['Name']) : '');
+  $wc_product->set_description(isset($product_data['Description']) ? wp_kses_post($product_data['Description']) : '');
 
   // Set price if available
-  if (isset($product_data['Precio']) && is_numeric($product_data['Precio'])) {
-    $wc_product->set_regular_price(floatval($product_data['Precio']));
-    $wc_product->set_price(floatval($product_data['Precio']));
+  if (isset($product_data['precio']) && is_numeric($product_data['precio'])) {
+    $wc_product->set_regular_price(floatval($product_data['precio']));
+    $wc_product->set_price(floatval($product_data['precio']));
   }
 
   // Set stock status (default to instock if not specified)
-  $wc_product->set_stock_status(isset($product_data['Stock']) && $product_data['Stock'] > 0 ? 'instock' : 'outofstock');
+  $wc_product->set_stock_status(isset($product_data['Quantity']) && $product_data['Quantity'] > 0 ? 'instock' : 'outofstock');
 
   // Set stock quantity if available
-  if (isset($product_data['Stock']) && is_numeric($product_data['Stock'])) {
-    $wc_product->set_stock_quantity(intval($product_data['Stock']));
+  if (isset($product_data['Quantity']) && is_numeric($product_data['Quantity'])) {
+    $wc_product->set_stock_quantity(intval($product_data['Quantity']));
   }
 
   // Product type is already set as simple by using WC_Product_Simple constructor
@@ -501,8 +501,8 @@ function shopcommerce_map_to_woocommerce_product($product_data, $brand) {
   $wc_product->update_meta_data('_external_provider_sync_date', current_time('mysql'));
 
   // Add additional metadata from ShopCommerce if available
-  if (isset($product_data['Marca'])) {
-    $wc_product->update_meta_data('_shopcommerce_marca', sanitize_text_field($product_data['Marca']));
+  if (isset($product_data['Marks'])) {
+    $wc_product->update_meta_data('_shopcommerce_marca', sanitize_text_field($product_data['Marks']));
   }
 
   if (isset($product_data['Categoria'])) {
@@ -524,8 +524,8 @@ function shopcommerce_map_to_woocommerce_product($product_data, $brand) {
   }
 
   // Handle product image if available
-  if (isset($product_data['Imagen']) && !empty($product_data['Imagen'])) {
-    $image_id = shopcommerce_attach_product_image($product_data['Imagen'], $wc_product->get_name());
+  if (isset($product_data['Imagenes']) && !empty($product_data['Imagenes'])) {
+    $image_id = shopcommerce_attach_product_image($product_data['Imagenes'][0], $wc_product->get_name());
     if ($image_id) {
       $wc_product->set_image_id($image_id);
     }
