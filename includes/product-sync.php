@@ -176,7 +176,17 @@ function provider_product_sync_hook()
   $response = wp_remote_post($api_url, $args);
 
   if (is_wp_error($response)) {
-    error_log('[ShopCommerce Sync] Error retrieving catalog for brand ' . $brand . ': ' . $response->get_error_message());
+    $error_message = $response->get_error_message();
+    error_log('[ShopCommerce Sync] Error retrieving catalog for brand ' . $brand . ': ' . $error_message);
+
+    // Log API error
+    if (function_exists('shopcommerce_log_activity')) {
+      shopcommerce_log_activity('sync_error', 'API error retrieving catalog', [
+        'brand' => $brand,
+        'error' => $error_message,
+        'api_url' => $api_url
+      ]);
+    }
     return;
   }
 
@@ -185,6 +195,14 @@ function provider_product_sync_hook()
 
   if (!is_array($json)) {
     error_log('[ShopCommerce Sync] Invalid JSON response for brand ' . $brand . '. Raw: ' . substr($body_str, 0, 500));
+
+    // Log JSON decode error
+    if (function_exists('shopcommerce_log_activity')) {
+      shopcommerce_log_activity('sync_error', 'Invalid JSON response', [
+        'brand' => $brand,
+        'response_preview' => substr($body_str, 0, 500)
+      ]);
+    }
     return;
   }
 
@@ -217,14 +235,22 @@ function provider_product_sync_hook()
   if (!empty($skus)) {
     error_log('[ShopCommerce Sync] Example SKUs processed: ' . implode(',', array_slice($skus, 0, 20)) . (count($skus) > 20 ? '...' : ''));
   }
-  error_log('[ShopCommerce Sync] Current job index: ' . get_option(shopcommerce_job_index_option_key()));
-  error_log('[ShopCommerce Sync] Current job: ' . print_r($job, true));
-  $jobs = get_option(shopcommerce_jobs_option_key());
-  error_log('[ShopCommerce Sync] jobs: ' . print_r($jobs, true));
 
   // Process the batch of products for WooCommerce
   if (!empty($batch)) {
-    shopcommerce_mass_insert_update_products($batch, $brand);
+    $results = shopcommerce_mass_insert_update_products($batch, $brand);
+
+    // Log the sync activity for management page
+    if (function_exists('shopcommerce_log_activity')) {
+        shopcommerce_log_activity('sync_complete', 'Sync completed for brand: ' . $brand, [
+            'brand' => $brand,
+            'products_processed' => count($batch),
+            'created' => $results['created'],
+            'updated' => $results['updated'],
+            'errors' => $results['errors'],
+            'categories' => $categories
+        ]);
+    }
   }
 }
 
@@ -328,15 +354,36 @@ function shopcommerce_mass_insert_update_products($products, $brand) {
             $existing_product->get_id(),
             $sku
           ));
+
+          // Log individual product update (only log every 10th product to avoid spam)
+          if ($results['updated'] % 10 === 0 && function_exists('shopcommerce_log_activity')) {
+            shopcommerce_log_activity('product_updated', 'Batch product update progress', [
+              'brand' => $brand,
+              'product_id' => $existing_product->get_id(),
+              'sku' => $sku,
+              'total_updated' => $results['updated']
+            ]);
+          }
         } else {
           // Create new product
           $wc_product->save();
+          $product_id = $wc_product->get_id();
           $results['created']++;
 
           error_log(sprintf('[ShopCommerce Sync] Created new product ID %d (SKU: %s)',
-            $wc_product->get_id(),
+            $product_id,
             $sku
           ));
+
+          // Log individual product creation
+          if (function_exists('shopcommerce_log_activity')) {
+            shopcommerce_log_activity('product_created', 'New product created', [
+              'brand' => $brand,
+              'product_id' => $product_id,
+              'sku' => $sku,
+              'product_name' => $wc_product->get_name()
+            ]);
+          }
         }
 
       } catch (Exception $e) {
@@ -345,6 +392,16 @@ function shopcommerce_mass_insert_update_products($products, $brand) {
           $e->getMessage(),
           json_encode($product_data)
         ));
+
+        // Log sync errors
+        if (function_exists('shopcommerce_log_activity')) {
+          shopcommerce_log_activity('sync_error', 'Product processing error', [
+            'brand' => $brand,
+            'error' => $e->getMessage(),
+            'product_data' => $product_data,
+            'total_errors' => $results['errors']
+          ]);
+        }
       }
     }
   }
