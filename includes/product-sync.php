@@ -217,6 +217,10 @@ function provider_product_sync_hook()
   if (!empty($skus)) {
     error_log('[ShopCommerce Sync] Example SKUs processed: ' . implode(',', array_slice($skus, 0, 20)) . (count($skus) > 20 ? '...' : ''));
   }
+  error_log('[ShopCommerce Sync] Current job index: ' . get_option(shopcommerce_job_index_option_key()));
+  error_log('[ShopCommerce Sync] Current job: ' . print_r($job, true));
+  $jobs = get_option(shopcommerce_jobs_option_key());
+  error_log('[ShopCommerce Sync] jobs: ' . print_r($jobs, true));
 }
 
 function get_api_token()
