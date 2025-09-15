@@ -468,8 +468,8 @@ function shopcommerce_map_to_woocommerce_product($product_data, $brand) {
     return null;
   }
 
-  // Create new WooCommerce product object
-  $wc_product = new WC_Product();
+  // Create new WooCommerce simple product object
+  $wc_product = new WC_Product_Simple();
 
   // Map basic product fields
   $wc_product->set_sku(isset($product_data['Sku']) ? sanitize_text_field($product_data['Sku']) : '');
@@ -490,8 +490,7 @@ function shopcommerce_map_to_woocommerce_product($product_data, $brand) {
     $wc_product->set_stock_quantity(intval($product_data['Stock']));
   }
 
-  // Set product as simple product (can be extended for variable products)
-  $wc_product->set_type('simple');
+  // Product type is already set as simple by using WC_Product_Simple constructor
 
   // Set product status to publish
   $wc_product->set_status('publish');
