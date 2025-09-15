@@ -2,7 +2,7 @@
 /**
  * Plugin Name:       ShopCommerce Product Sync Plugin
  * Description:       A plugin to sync products from ShopCommerce with WooCommerce, specially for Hekalsoluciones.
- * Version:           1.0.2
+ * Version:           1.1.0
  * Author:            Esteban Andres Murcia Acuña
  * Author URI:        https://estebanmurcia.dev/
  * License:           GPL-2.0+
@@ -42,7 +42,16 @@ function shopcommerce_product_sync_debug_page() {
         provider_product_sync_hook();
         echo '<div class="updated"><p>Sync executed. Check debug.log.</p></div>';
     }
+    if ( isset($_POST['reset_jobs']) ) {
+        shopcommerce_reset_jobs();
+        echo '<div class="updated"><p>Job queue reset. It will reinitialize on next run.</p></div>';
+    }
     echo '<div class="wrap"><h1>ShopCommerce Product Sync Debug</h1>
-          <form method="post"><button class="button button-primary" name="run_sync">Run Sync Now</button></form>
+          <form method="post" style="margin-bottom:10px;">
+            <button class="button button-primary" name="run_sync">Run Next Job Now</button>
+          </form>
+          <form method="post">
+            <button class="button" name="reset_jobs">Reset Jobs</button>
+          </form>
           </div>';
 }
