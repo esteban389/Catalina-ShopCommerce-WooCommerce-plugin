@@ -160,17 +160,16 @@ function provider_product_sync_hook()
   $headers = [
     'Authorization' => 'Bearer ' . $token,
     'Content-Type' => 'application/json',  // uncomment if API expects JSON
-    'X-MARK' => $brand,
+    'X-MARKS' => $brand,
   ];
   if (!empty($categories)) {
     // Convert categories to a string of comma separated integers
-    $headers['Categorias'] = implode(',', $categories);
+    $headers['X-CATEGORIA'] = implode(',', $categories);
   }
 
   $args = [
     'headers' => $headers,
     'timeout' => $timeout,
-    'body' => $body,
   ];
 
   $response = wp_remote_post($api_url, $args);
@@ -225,31 +224,20 @@ function provider_product_sync_hook()
   $batch_size = 100;  // adjust based on execution time constraints
   $batch = array_slice($items, 0, $batch_size);
 
-  // TODO: Map $batch to WooCommerce products (create/update). For now, just log SKUs if present.
-  $skus = [];
-  foreach ($batch as $row) {
-    if (isset($row['Sku'])) {
-      $skus[] = $row['Sku'];
-    }
-  }
-  if (!empty($skus)) {
-    error_log('[ShopCommerce Sync] Example SKUs processed: ' . implode(',', array_slice($skus, 0, 20)) . (count($skus) > 20 ? '...' : ''));
-  }
-
   // Process the batch of products for WooCommerce
   if (!empty($batch)) {
     $results = shopcommerce_mass_insert_update_products($batch, $brand);
 
     // Log the sync activity for management page
     if (function_exists('shopcommerce_log_activity')) {
-        shopcommerce_log_activity('sync_complete', 'Sync completed for brand: ' . $brand, [
-            'brand' => $brand,
-            'products_processed' => count($batch),
-            'created' => $results['created'],
-            'updated' => $results['updated'],
-            'errors' => $results['errors'],
-            'categories' => $categories
-        ]);
+      shopcommerce_log_activity('sync_complete', 'Sync completed for brand: ' . $brand, [
+        'brand' => $brand,
+        'products_processed' => count($batch),
+        'created' => $results['created'],
+        'updated' => $results['updated'],
+        'errors' => $results['errors'],
+        'categories' => $categories
+      ]);
     }
   }
 }
@@ -297,7 +285,8 @@ function get_api_token()
  * @param string $brand Brand name for metadata and logging
  * @return array Results summary with counts of created/updated products
  */
-function shopcommerce_mass_insert_update_products($products, $brand) {
+function shopcommerce_mass_insert_update_products($products, $brand)
+{
   if (!is_array($products) || empty($products)) {
     error_log('[ShopCommerce Sync] Empty products array provided to mass insert/update function');
     return ['created' => 0, 'updated' => 0, 'errors' => 0];
@@ -314,7 +303,7 @@ function shopcommerce_mass_insert_update_products($products, $brand) {
   $existing_products_cache = [];
 
   // Process products in batches for better performance
-  $batch_size = 50; // Process 50 products at a time
+  $batch_size = 50;  // Process 50 products at a time
   $product_batches = array_chunk($products, $batch_size);
 
   foreach ($product_batches as $batch_index => $batch) {
@@ -322,111 +311,52 @@ function shopcommerce_mass_insert_update_products($products, $brand) {
       $batch_index + 1,
       count($product_batches),
       $brand,
-      count($batch)
-    ));
+      count($batch)));
 
     foreach ($batch as $product_data) {
       try {
-        // Map ShopCommerce product data to WooCommerce format
-        $wc_product = shopcommerce_map_to_woocommerce_product($product_data, $brand);
-
-        if (!$wc_product) {
-          $results['errors']++;
-          error_log('[ShopCommerce Sync] Failed to map product data: ' . json_encode($product_data));
-          continue;
+        // Extract SKU first from multiple possible fields
+        $sku = null;
+        foreach (['Sku', 'SKU', 'PartNum', 'Codigo', 'ProductCode'] as $sku_field) {
+          if (isset($product_data[$sku_field]) && !empty(trim($product_data[$sku_field]))) {
+            $sku = trim($product_data[$sku_field]);
+            break;
+          }
         }
 
-        // Check if product exists by SKU
-        $sku = $wc_product->get_sku();
-        if (!isset($existing_products_cache[$sku])) {
-          $existing_products_cache[$sku] = shopcommerce_get_product_by_sku($sku);
+        // Generate a cache key (use product name as fallback if no SKU)
+        $cache_key = !empty($sku) ? $sku : (isset($product_data['Name']) ? md5($product_data['Name']) : uniqid('no_sku_', true));
+
+        // Check if product exists by SKU first
+        $existing_product = null;
+        if (!empty($sku)) {
+          if (!isset($existing_products_cache[$sku])) {
+            $existing_products_cache[$sku] = shopcommerce_get_product_by_sku($sku);
+          }
+          $existing_product = $existing_products_cache[$sku];
         }
 
-        $existing_product = $existing_products_cache[$sku];
+        // If no SKU or not found, check by cache key
+        if (!$existing_product && !isset($existing_products_cache[$cache_key])) {
+          $existing_products_cache[$cache_key] = null;
+        }
 
         if ($existing_product) {
-          // Update existing product - work directly with the existing product object
+          // Update existing product
           $product_id = $existing_product->get_id();
 
-          // Update the existing product's properties directly
-          $existing_product->set_name(isset($product_data['Name']) ? sanitize_text_field($product_data['Name']) : '');
-          $existing_product->set_description(isset($product_data['Description']) ? wp_kses_post($product_data['Description']) : '');
+          // Get mapped data as array first
+          $mapped_data = shopcommerce_map_product_data($product_data, $brand, $sku);
 
-          // Set price if available
-          if (isset($product_data['precio']) && is_numeric($product_data['precio'])) {
-            $existing_product->set_regular_price(floatval($product_data['precio']));
-            $existing_product->set_price(floatval($product_data['precio']));
-          }
+          // Apply the mapped data to existing product
+          shopcommerce_apply_product_data($existing_product, $mapped_data, $product_data, $brand);
 
-          // Update stock status and quantity
-          if (isset($product_data['Quantity']) && is_numeric($product_data['Quantity'])) {
-            $existing_product->set_stock_quantity(intval($product_data['Quantity']));
-            $existing_product->set_stock_status($product_data['Quantity'] > 0 ? 'instock' : 'outofstock');
-          }
-
-          // Update external provider metadata
-          $existing_product->update_meta_data('_external_provider_brand', $brand);
-          $existing_product->update_meta_data('_external_provider_sync_date', current_time('mysql'));
-
-          // Update additional metadata
-          if (isset($product_data['Marks'])) {
-            $existing_product->update_meta_data('_shopcommerce_marca', sanitize_text_field($product_data['Marks']));
-          }
-
-          if (isset($product_data['Categoria'])) {
-            $existing_product->update_meta_data('_shopcommerce_categoria', sanitize_text_field($product_data['Categoria']));
-          }
-
-          // Handle categories
-          if (isset($product_data['Categoria']) || isset($product_data['CategoriaDescripcion'])) {
-            $category_name = isset($product_data['CategoriaDescripcion']) ?
-              sanitize_text_field($product_data['CategoriaDescripcion']) :
-              sanitize_text_field($product_data['Categoria']);
-
-            if (!empty($category_name)) {
-              $category_id = shopcommerce_get_or_create_category($category_name);
-              if ($category_id) {
-                $existing_product->set_category_ids([$category_id]);
-              }
-            }
-          }
-
-          // Handle image updates with timestamp checking
-          if (isset($product_data['Imagenes']) && !empty($product_data['Imagenes'])) {
-            $image_url = $product_data['Imagenes'][0];
-            $current_image_id = $existing_product->get_image_id();
-            $last_image_update = $existing_product->get_meta('_external_image_last_updated');
-
-            // Only update image if URL has changed or hasn't been updated in 24 hours
-            $update_image = false;
-            if (!$current_image_id) {
-              $update_image = true; // No image set
-            } else {
-              $current_image_url = get_post_meta($current_image_id, '_external_image_url', true);
-              if ($current_image_url !== $image_url) {
-                $update_image = true; // URL has changed
-              } elseif (!$last_image_update || (time() - strtotime($last_image_update)) > 24 * 60 * 60) {
-                $update_image = true; // Haven't updated in 24 hours
-              }
-            }
-
-            if ($update_image) {
-              $new_image_id = shopcommerce_attach_product_image($image_url, $existing_product->get_name());
-              if ($new_image_id) {
-                $existing_product->set_image_id($new_image_id);
-                $existing_product->update_meta_data('_external_image_last_updated', current_time('mysql'));
-              }
-            }
-          }
-
-          // Save the updated product
           $existing_product->save();
           $results['updated']++;
 
           error_log(sprintf('[ShopCommerce Sync] Updated product ID %d (SKU: %s)',
             $product_id,
-            $sku
-          ));
+            $sku));
 
           // Log individual product update (only log every 10th product to avoid spam)
           if ($results['updated'] % 10 === 0 && function_exists('shopcommerce_log_activity')) {
@@ -438,33 +368,54 @@ function shopcommerce_mass_insert_update_products($products, $brand) {
             ]);
           }
         } else {
-          // Create new product
+          // Create new product with proper SKU conflict handling
+          $wc_product = new WC_Product_Simple();
+
+          // Get mapped data as array
+          $mapped_data = shopcommerce_map_product_data($product_data, $brand, $sku);
+
+          // Check SKU uniqueness before creating product
+          $final_sku = $sku;
+          if (!empty($sku)) {
+            $existing_sku_id = wc_get_product_id_by_sku($sku);
+            if ($existing_sku_id) {
+              // SKU conflict, use empty SKU and store original in meta
+              $final_sku = '';
+              $mapped_data['_shopcommerce_sku'] = $sku;
+              error_log('[ShopCommerce Sync] SKU conflict detected for new product, stored in meta: ' . $sku);
+            }
+          }
+
+          // Apply mapped data
+          shopcommerce_apply_product_data($wc_product, $mapped_data, $product_data, $brand);
+
+          // Set the final SKU (safe now)
+          if (!empty($final_sku)) {
+            $wc_product->set_sku($final_sku);
+          }
+
           $wc_product->save();
           $product_id = $wc_product->get_id();
           $results['created']++;
 
           error_log(sprintf('[ShopCommerce Sync] Created new product ID %d (SKU: %s)',
             $product_id,
-            $sku
-          ));
+            $final_sku ?: '(no SKU)'));
 
           // Log individual product creation
           if (function_exists('shopcommerce_log_activity')) {
             shopcommerce_log_activity('product_created', 'New product created', [
               'brand' => $brand,
               'product_id' => $product_id,
-              'sku' => $sku,
+              'sku' => $final_sku ?: '(no SKU)',
               'product_name' => $wc_product->get_name()
             ]);
           }
         }
-
       } catch (Exception $e) {
         $results['errors']++;
-        error_log(sprintf('[ShopCommerce Sync] Error processing product: %s | Data: %s',
-          $e->getMessage(),
-          json_encode($product_data)
-        ));
+        error_log(sprintf('[ShopCommerce Sync] Error processing product: %s',
+            $e->getMessage()));
 
         // Log sync errors
         if (function_exists('shopcommerce_log_activity')) {
@@ -484,24 +435,27 @@ function shopcommerce_mass_insert_update_products($products, $brand) {
     $brand,
     $results['created'],
     $results['updated'],
-    $results['errors']
-  ));
+    $results['errors']));
 
   return $results;
 }
 
 /**
- * Find existing WooCommerce product by SKU
+ * Find existing WooCommerce product by SKU with multiple lookup methods
  *
  * @param string $sku Product SKU to search for
  * @return WC_Product|null Found product object or null
  */
-function shopcommerce_get_product_by_sku($sku) {
+function shopcommerce_get_product_by_sku($sku)
+{
   if (empty($sku)) {
     return null;
   }
 
-  // Use WooCommerce's built-in product query
+  // Normalize SKU (trim, uppercase for comparison)
+  $normalized_sku = trim(strtoupper($sku));
+
+  // Method 1: Direct SKU match
   $args = [
     'post_type' => 'product',
     'post_status' => 'any',
@@ -519,94 +473,40 @@ function shopcommerce_get_product_by_sku($sku) {
 
   if ($query->have_posts()) {
     $post = $query->posts[0];
+    error_log('[ShopCommerce Sync] Found product ID: ' . $post->ID);
     return wc_get_product($post->ID);
+  }
+
+  // Method 2: Try case-insensitive match using direct DB query
+  global $wpdb;
+  $product_id = $wpdb->get_var($wpdb->prepare(
+    "SELECT post_id FROM $wpdb->postmeta
+     WHERE meta_key = '_sku' AND UPPER(TRIM(meta_value)) = %s
+     LIMIT 1",
+    $normalized_sku
+  ));
+
+  if ($product_id) {
+    error_log('[ShopCommerce Sync] Found product ID: ' . $product_id);
+    return wc_get_product($product_id);
+  }
+
+  // Method 3: Check external provider meta if available
+  $product_id = $wpdb->get_var($wpdb->prepare(
+    "SELECT post_id FROM $wpdb->postmeta
+     WHERE meta_key = '_shopcommerce_sku' AND UPPER(TRIM(meta_value)) = %s
+     LIMIT 1",
+    $normalized_sku
+  ));
+
+  if ($product_id) {
+    error_log('[ShopCommerce Sync] Found product ID: ' . $product_id);
+    return wc_get_product($product_id);
   }
 
   return null;
 }
 
-/**
- * Map ShopCommerce product data to WooCommerce product format
- *
- * This function transforms the product data from the ShopCommerce API into
- * a format compatible with WooCommerce products. It handles field mapping,
- * category assignment, and metadata setup.
- *
- * @param array $product_data Raw product data from ShopCommerce API
- * @param string $brand Brand name for metadata
- * @return WC_Product|null Mapped WooCommerce product or null on failure
- */
-function shopcommerce_map_to_woocommerce_product($product_data, $brand) {
-  if (!is_array($product_data) || empty($product_data)) {
-    return null;
-  }
-
-  // Create new WooCommerce simple product object
-  $wc_product = new WC_Product_Simple();
-
-  // Map basic product fields
-  $wc_product->set_sku(isset($product_data['Sku']) ? sanitize_text_field($product_data['Sku']) : '');
-  $wc_product->set_name(isset($product_data['Name']) ? sanitize_text_field($product_data['Name']) : '');
-  $wc_product->set_description(isset($product_data['Description']) ? wp_kses_post($product_data['Description']) : '');
-
-  // Set price if available
-  if (isset($product_data['precio']) && is_numeric($product_data['precio'])) {
-    $wc_product->set_regular_price(floatval($product_data['precio']));
-    $wc_product->set_price(floatval($product_data['precio']));
-  }
-
-  // Set stock status (default to instock if not specified)
-  $wc_product->set_stock_status(isset($product_data['Quantity']) && $product_data['Quantity'] > 0 ? 'instock' : 'outofstock');
-
-  // Set stock quantity if available
-  if (isset($product_data['Quantity']) && is_numeric($product_data['Quantity'])) {
-    $wc_product->set_stock_quantity(intval($product_data['Quantity']));
-  }
-
-  // Product type is already set as simple by using WC_Product_Simple constructor
-
-  // Set product status to publish
-  $wc_product->set_status('publish');
-
-  // Add external provider metadata for identification
-  $wc_product->update_meta_data('_external_provider', 'shopcommerce');
-  $wc_product->update_meta_data('_external_provider_brand', $brand);
-  $wc_product->update_meta_data('_external_provider_sync_date', current_time('mysql'));
-
-  // Add additional metadata from ShopCommerce if available
-  if (isset($product_data['Marks'])) {
-    $wc_product->update_meta_data('_shopcommerce_marca', sanitize_text_field($product_data['Marks']));
-  }
-
-  if (isset($product_data['Categoria'])) {
-    $wc_product->update_meta_data('_shopcommerce_categoria', sanitize_text_field($product_data['Categoria']));
-  }
-
-  // Handle categories - map to WooCommerce categories
-  if (isset($product_data['Categoria']) || isset($product_data['CategoriaDescripcion'])) {
-    $category_name = isset($product_data['CategoriaDescripcion']) ?
-      sanitize_text_field($product_data['CategoriaDescripcion']) :
-      sanitize_text_field($product_data['Categoria']);
-
-    if (!empty($category_name)) {
-      $category_id = shopcommerce_get_or_create_category($category_name);
-      if ($category_id) {
-        $wc_product->set_category_ids([$category_id]);
-      }
-    }
-  }
-
-  // Handle product image if available
-  if (isset($product_data['Imagenes']) && !empty($product_data['Imagenes'])) {
-    $image_id = shopcommerce_attach_product_image($product_data['Imagenes'][0], $wc_product->get_name());
-    if ($image_id) {
-      $wc_product->set_image_id($image_id);
-      $wc_product->update_meta_data('_external_image_last_updated', current_time('mysql'));
-    }
-  }
-
-  return $wc_product;
-}
 
 /**
  * Get or create WooCommerce category by name
@@ -614,7 +514,8 @@ function shopcommerce_map_to_woocommerce_product($product_data, $brand) {
  * @param string $category_name Category name
  * @return int|null Category ID or null on failure
  */
-function shopcommerce_get_or_create_category($category_name) {
+function shopcommerce_get_or_create_category($category_name)
+{
   if (empty($category_name)) {
     return null;
   }
@@ -632,8 +533,7 @@ function shopcommerce_get_or_create_category($category_name) {
   if (!is_wp_error($result)) {
     error_log(sprintf('[ShopCommerce Sync] Created new category: %s (ID: %d)',
       $category_name,
-      $result['term_id']
-    ));
+      $result['term_id']));
     return $result['term_id'];
   }
 
@@ -648,7 +548,8 @@ function shopcommerce_get_or_create_category($category_name) {
  * @param string $product_name Product name for image title
  * @return int|null Attachment ID or null on failure
  */
-function shopcommerce_attach_product_image($image_url, $product_name) {
+function shopcommerce_attach_product_image($image_url, $product_name)
+{
   if (empty($image_url) || !filter_var($image_url, FILTER_VALIDATE_URL)) {
     return null;
   }
@@ -691,9 +592,9 @@ function shopcommerce_attach_product_image($image_url, $product_name) {
   // Create attachment
   $attachment = [
     'post_mime_type' => $file_info['type'],
-    'post_title'     => sanitize_file_name($product_name),
-    'post_content'   => '',
-    'post_status'    => 'inherit'
+    'post_title' => sanitize_file_name($product_name),
+    'post_content' => '',
+    'post_status' => 'inherit'
   ];
 
   $attachment_id = wp_insert_attachment($attachment, $upload['file']);
@@ -704,7 +605,7 @@ function shopcommerce_attach_product_image($image_url, $product_name) {
   }
 
   // Generate attachment metadata
-  require_once(ABSPATH . 'wp-admin/includes/image.php');
+  require_once (ABSPATH . 'wp-admin/includes/image.php');
   $attach_data = wp_generate_attachment_metadata($attachment_id, $upload['file']);
   wp_update_attachment_metadata($attachment_id, $attach_data);
 
@@ -714,8 +615,7 @@ function shopcommerce_attach_product_image($image_url, $product_name) {
   error_log(sprintf('[ShopCommerce Sync] Attached image %s to product %s (ID: %d)',
     $image_url,
     $product_name,
-    $attachment_id
-  ));
+    $attachment_id));
 
   return $attachment_id;
 }
@@ -726,7 +626,8 @@ function shopcommerce_attach_product_image($image_url, $product_name) {
  * @param string $image_url Image URL to search for
  * @return int|null Attachment ID or null if not found
  */
-function shopcommerce_get_image_by_url($image_url) {
+function shopcommerce_get_image_by_url($image_url)
+{
   global $wpdb;
 
   $attachment_id = $wpdb->get_var($wpdb->prepare(
@@ -735,4 +636,128 @@ function shopcommerce_get_image_by_url($image_url) {
   ));
 
   return $attachment_id ? intval($attachment_id) : null;
+}
+
+/**
+ * Map ShopCommerce product data to a simple array format
+ *
+ * @param array $product_data Raw product data from ShopCommerce API
+ * @param string $brand Brand name for metadata
+ * @param string|null $sku Product SKU
+ * @return array Mapped product data
+ */
+function shopcommerce_map_product_data($product_data, $brand, $sku = null)
+{
+  $mapped_data = [
+    'name' => isset($product_data['Name']) ? sanitize_text_field($product_data['Name']) : '',
+    'description' => isset($product_data['Description']) ? wp_kses_post($product_data['Description']) : '',
+    'regular_price' => isset($product_data['precio']) && is_numeric($product_data['precio']) ? floatval($product_data['precio']) : null,
+    'stock_quantity' => isset($product_data['Quantity']) && is_numeric($product_data['Quantity']) ? intval($product_data['Quantity']) : null,
+    'stock_status' => isset($product_data['Quantity']) && $product_data['Quantity'] > 0 ? 'instock' : 'outofstock',
+    'status' => 'publish',
+    'meta_data' => [
+      '_external_provider' => 'shopcommerce',
+      '_external_provider_brand' => $brand,
+      '_external_provider_sync_date' => current_time('mysql'),
+      '_shopcommerce_sku' => $sku, // Store original SKU
+    ],
+    'category_name' => null,
+    'image_url' => null,
+  ];
+
+  // Add additional metadata from ShopCommerce if available
+  if (isset($product_data['Marks'])) {
+    $mapped_data['meta_data']['_shopcommerce_marca'] = sanitize_text_field($product_data['Marks']);
+  }
+
+  if (isset($product_data['Categoria'])) {
+    $mapped_data['meta_data']['_shopcommerce_categoria'] = sanitize_text_field($product_data['Categoria']);
+  }
+
+  // Handle categories
+  if (isset($product_data['CategoriaDescripcion'])) {
+    $mapped_data['category_name'] = sanitize_text_field($product_data['CategoriaDescripcion']);
+  } elseif (isset($product_data['Categoria'])) {
+    $mapped_data['category_name'] = sanitize_text_field($product_data['Categoria']);
+  }
+
+  // Handle product image
+  if (isset($product_data['Imagenes']) && !empty($product_data['Imagenes'])) {
+    $mapped_data['image_url'] = $product_data['Imagenes'][0];
+  }
+
+  return $mapped_data;
+}
+
+/**
+ * Apply mapped product data to a WooCommerce product object
+ *
+ * @param WC_Product $wc_product WooCommerce product object
+ * @param array $mapped_data Mapped product data
+ * @param array $original_data Original product data from API
+ * @param string $brand Brand name
+ */
+function shopcommerce_apply_product_data($wc_product, $mapped_data, $original_data, $brand)
+{
+  // Set basic fields
+  $wc_product->set_name($mapped_data['name']);
+  $wc_product->set_description($mapped_data['description']);
+  $wc_product->set_status($mapped_data['status']);
+  $wc_product->set_stock_status($mapped_data['stock_status']);
+
+  // Set price if available
+  if ($mapped_data['regular_price'] !== null) {
+    $wc_product->set_regular_price($mapped_data['regular_price']);
+    $wc_product->set_price($mapped_data['regular_price']);
+  }
+
+  // Set stock quantity if available
+  if ($mapped_data['stock_quantity'] !== null) {
+    $wc_product->set_stock_quantity($mapped_data['stock_quantity']);
+  }
+
+  // Apply metadata
+  foreach ($mapped_data['meta_data'] as $key => $value) {
+    if ($value !== null) {
+      $wc_product->update_meta_data($key, $value);
+    }
+  }
+
+  // Handle categories
+  if ($mapped_data['category_name']) {
+    $category_id = shopcommerce_get_or_create_category($mapped_data['category_name']);
+    if ($category_id) {
+      $wc_product->set_category_ids([$category_id]);
+    }
+  }
+
+  // Handle image updates with timestamp checking (only for existing products)
+  if ($mapped_data['image_url'] && method_exists($wc_product, 'get_id')) {
+    $product_id = $wc_product->get_id();
+    if ($product_id) {
+      $current_image_id = $wc_product->get_image_id();
+      $last_image_update = $wc_product->get_meta('_external_image_last_updated');
+
+      // Only update image if URL has changed or hasn't been updated in 24 hours
+      $update_image = false;
+      if (!$current_image_id) {
+        $update_image = true; // No image set
+      } else {
+        $current_image_url = get_post_meta($current_image_id, '_external_image_url', true);
+        if ($current_image_url !== $mapped_data['image_url']) {
+          $update_image = true; // URL has changed
+        } elseif (!$last_image_update || (time() - strtotime($last_image_update)) > 24 * 60 * 60) {
+          $update_image = true; // Haven't updated in 24 hours
+        }
+      }
+
+      if ($update_image) {
+        $new_image_id = shopcommerce_attach_product_image($mapped_data['image_url'], $wc_product->get_name());
+        if ($new_image_id) {
+          $wc_product->set_image_id($new_image_id);
+          $wc_product->update_meta_data('_external_image_last_updated', current_time('mysql'));
+        }
+      }
+    }
+  }
 }
