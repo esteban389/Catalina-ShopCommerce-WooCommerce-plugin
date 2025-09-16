@@ -21,6 +21,8 @@ class ShopCommerce_API {
      */
     const TOKEN_ENDPOINT = 'Token';
     const CATALOG_ENDPOINT = 'api/Webapi/VerCatalogo';
+    const BRANDS_ENDPOINT = 'api/Webapi/VerMarcas';
+    const CATEGORIES_ENDPOINT = 'api/Webapi/Ver_Categoria';
 
     /**
      * API timeout (14 minutes)
@@ -183,6 +185,128 @@ class ShopCommerce_API {
         ]);
 
         return $products;
+    }
+
+    /**
+     * Get brands from ShopCommerce API
+     *
+     * @return array|null Brands data or null on failure
+     */
+    public function get_brands() {
+        $token = $this->get_token();
+        if (!$token) {
+            $this->logger->error('Cannot retrieve brands - no valid token');
+            return null;
+        }
+
+        $brands_url = trailingslashit(self::BASE_URL) . self::BRANDS_ENDPOINT;
+
+        // Prepare headers
+        $headers = [
+            'Authorization' => 'Bearer ' . $token,
+            'Content-Type' => 'application/json',
+        ];
+
+        $request_args = [
+            'headers' => $headers,
+            'timeout' => self::TIMEOUT,
+        ];
+
+        $this->logger->debug('Requesting brands from API', ['url' => $brands_url]);
+
+        $response = wp_remote_post($brands_url, $request_args);
+
+        if (is_wp_error($response)) {
+            $error_message = $response->get_error_message();
+            $this->logger->error('Error retrieving brands', [
+                'error' => $error_message,
+                'url' => $brands_url
+            ]);
+            return null;
+        }
+
+        $response_body = wp_remote_retrieve_body($response);
+        $response_data = json_decode($response_body, true);
+
+        if (!is_array($response_data)) {
+            $this->logger->error('Invalid JSON response for brands', [
+                'response_preview' => substr($response_body, 0, 500)
+            ]);
+            return null;
+        }
+
+        // Handle wrapped response format
+        $brands = $response_data;
+        if (isset($response_data['marcas']) && is_array($response_data['marcas'])) {
+            $brands = $response_data['marcas'];
+        }
+
+        $this->logger->info('Brands retrieved successfully', [
+            'brand_count' => count($brands)
+        ]);
+
+        return $brands;
+    }
+
+    /**
+     * Get categories from ShopCommerce API
+     *
+     * @return array|null Categories data or null on failure
+     */
+    public function get_categories() {
+        $token = $this->get_token();
+        if (!$token) {
+            $this->logger->error('Cannot retrieve categories - no valid token');
+            return null;
+        }
+
+        $categories_url = trailingslashit(self::BASE_URL) . self::CATEGORIES_ENDPOINT;
+
+        // Prepare headers
+        $headers = [
+            'Authorization' => 'Bearer ' . $token,
+            'Content-Type' => 'application/json',
+        ];
+
+        $request_args = [
+            'headers' => $headers,
+            'timeout' => self::TIMEOUT,
+        ];
+
+        $this->logger->debug('Requesting categories from API', ['url' => $categories_url]);
+
+        $response = wp_remote_post($categories_url, $request_args);
+
+        if (is_wp_error($response)) {
+            $error_message = $response->get_error_message();
+            $this->logger->error('Error retrieving categories', [
+                'error' => $error_message,
+                'url' => $categories_url
+            ]);
+            return null;
+        }
+
+        $response_body = wp_remote_retrieve_body($response);
+        $response_data = json_decode($response_body, true);
+
+        if (!is_array($response_data)) {
+            $this->logger->error('Invalid JSON response for categories', [
+                'response_preview' => substr($response_body, 0, 500)
+            ]);
+            return null;
+        }
+
+        // Handle wrapped response format
+        $categories = $response_data;
+        if (isset($response_data['categorias']) && is_array($response_data['categorias'])) {
+            $categories = $response_data['categorias'];
+        }
+
+        $this->logger->info('Categories retrieved successfully', [
+            'category_count' => count($categories)
+        ]);
+
+        return $categories;
     }
 
     /**

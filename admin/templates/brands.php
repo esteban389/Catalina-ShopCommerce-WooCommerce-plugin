@@ -49,9 +49,15 @@ $current_tab = isset($_GET['tab']) ? sanitize_text_field($_GET['tab']) : 'brands
             <div class="brands-section">
                 <div class="section-header">
                     <h2>Manage Brands</h2>
-                    <button type="button" class="button button-primary" id="add-brand-btn">
-                        Add New Brand
-                    </button>
+                    <div class="header-actions">
+                        <button type="button" class="button" id="sync-api-brands-btn" title="Sync brands from ShopCommerce API">
+                            <span class="dashicons dashicons-update"></span>
+                            Sync API Brands
+                        </button>
+                        <button type="button" class="button button-primary" id="add-brand-btn">
+                            Add New Brand
+                        </button>
+                    </div>
                 </div>
 
                 <!-- Brands Table -->
@@ -129,9 +135,15 @@ $current_tab = isset($_GET['tab']) ? sanitize_text_field($_GET['tab']) : 'brands
             <div class="categories-section">
                 <div class="section-header">
                     <h2>Manage Categories</h2>
-                    <button type="button" class="button button-primary" id="add-category-btn">
-                        Add New Category
-                    </button>
+                    <div class="header-actions">
+                        <button type="button" class="button button-secondary" id="sync-categories-btn">
+                            <span class="dashicons dashicons-update"></span>
+                            Sync Categories from API
+                        </button>
+                        <button type="button" class="button button-primary" id="add-category-btn">
+                            Add New Category
+                        </button>
+                    </div>
                 </div>
 
                 <!-- Categories Table -->
@@ -559,6 +571,32 @@ $current_tab = isset($_GET['tab']) ? sanitize_text_field($_GET['tab']) : 'brands
         padding: 10px;
     }
 }
+
+.header-actions {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+}
+
+.header-actions .button {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+
+/* Spinning animation for dashicons */
+.spin {
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    from {
+        transform: rotate(0deg);
+    }
+    to {
+        transform: rotate(360deg);
+    }
+}
 </style>
 
 <script type="text/javascript">
@@ -852,6 +890,75 @@ jQuery(document).ready(function($) {
 
     $('#confirm-modal-cancel').on('click', function() {
         closeModal('confirm-modal');
+    });
+
+    // Sync Categories from API functionality
+    $('#sync-categories-btn').on('click', function() {
+        var $btn = $(this);
+        var $spinner = $btn.next('.spinner');
+
+        if (confirm('Are you sure you want to sync categories from the ShopCommerce API? This will create new plugin categories that don\'t already exist.')) {
+            $btn.prop('disabled', true);
+            $spinner.show();
+
+            $.ajax({
+                url: shopcommerce_admin.ajax_url,
+                type: 'POST',
+                data: {
+                    action: 'shopcommerce_sync_categories',
+                    nonce: shopcommerce_admin.nonce
+                },
+                success: function(response) {
+                    if (response.success) {
+                        alert(response.data.message);
+                        location.reload();
+                    } else {
+                        alert('Error: ' + response.data.message);
+                    }
+                },
+                error: function() {
+                    alert('Network error occurred while syncing categories.');
+                },
+                complete: function() {
+                    $btn.prop('disabled', false);
+                    $spinner.hide();
+                }
+            });
+        }
+    });
+
+    // Sync API Brands functionality
+    $('#sync-api-brands-btn').on('click', function() {
+        var $btn = $(this);
+
+        if (confirm('Are you sure you want to sync brands from the ShopCommerce API? This will create new brands that don\'t already exist in the plugin. Default brands will be active, others will be inactive.')) {
+            $btn.prop('disabled', true);
+            $btn.find('.dashicons').addClass('spin');
+
+            $.ajax({
+                url: shopcommerce_admin.ajax_url,
+                type: 'POST',
+                data: {
+                    action: 'shopcommerce_fetch_api_brands',
+                    nonce: shopcommerce_admin.nonce
+                },
+                success: function(response) {
+                    if (response.success) {
+                        alert(response.data.message);
+                        location.reload();
+                    } else {
+                        alert('Error: ' + response.data.message);
+                    }
+                },
+                error: function(xhr, status, error) {
+                    alert('Network error occurred while syncing brands from API: ' + error);
+                },
+                complete: function() {
+                    $btn.prop('disabled', false);
+                    $btn.find('.dashicons').removeClass('spin');
+                }
+            });
+        }
     });
 
     // Rebuild Jobs functionality

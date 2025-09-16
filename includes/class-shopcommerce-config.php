@@ -365,18 +365,25 @@ class ShopCommerce_Config {
             return false;
         }
 
+        // Define default category codes that should be active
+        $default_category_codes = [1, 7, 12, 14, 18];
+
+        // Set active status based on whether this is a default category
+        $is_active = in_array($code, $default_category_codes) ? 1 : 0;
+
         $result = $wpdb->insert(
             $this->categories_table,
             [
                 'name' => $name,
                 'code' => $code,
                 'description' => $description,
+                'is_active' => $is_active,
             ]
         );
 
         if ($result) {
             $category_id = $wpdb->insert_id;
-            $this->logger->info('Created new category', ['category_id' => $category_id, 'name' => $name, 'code' => $code]);
+            $this->logger->info('Created new category', ['category_id' => $category_id, 'name' => $name, 'code' => $code, 'is_active' => $is_active]);
             return $category_id;
         }
 
@@ -593,6 +600,155 @@ class ShopCommerce_Config {
         }
 
         return false;
+    }
+
+    /**
+     * Create brands from API response, ignoring existing ones
+     *
+     * @param array $api_brands Brands data from API response
+     * @return array Results with created, skipped, and error counts
+     */
+    public function create_brands_from_api($api_brands) {
+        global $wpdb;
+
+        if (!is_array($api_brands)) {
+            $this->logger->error('Invalid API brands data', ['type' => gettype($api_brands)]);
+            return [
+                'created' => 0,
+                'skipped' => 0,
+                'errors' => 1,
+                'error_messages' => ['Invalid API brands data format']
+            ];
+        }
+
+        $results = [
+            'created' => 0,
+            'skipped' => 0,
+            'errors' => 0,
+            'error_messages' => [],
+            'created_brands' => [],
+            'skipped_brands' => []
+        ];
+
+        $this->logger->info('Starting to create brands from API', ['total_api_brands' => count($api_brands)]);
+
+        foreach ($api_brands as $api_brand) {
+            try {
+                // Validate API brand structure
+                if (!is_array($api_brand) || !isset($api_brand['MarcaHomologada'])) {
+                    $results['errors']++;
+                    $results['error_messages'][] = 'Invalid brand structure: missing MarcaHomologada';
+                    continue;
+                }
+
+                // Use MarcaHomologada as the brand name, fallback to Marks if needed
+                $brand_name = !empty($api_brand['MarcaHomologada']) ? trim($api_brand['MarcaHomologada']) : trim($api_brand['Marks'] ?? '');
+
+                if (empty($brand_name)) {
+                    $results['errors']++;
+                    $results['error_messages'][] = 'Empty brand name for CodigoMarca: ' . ($api_brand['CodigoMarca'] ?? 'unknown');
+                    continue;
+                }
+
+                // Check if brand already exists (by name or slug)
+                $slug = sanitize_title($brand_name);
+                $existing_brand = $wpdb->get_row($wpdb->prepare(
+                    "SELECT id, name FROM {$this->brands_table} WHERE name = %s OR slug = %s",
+                    $brand_name,
+                    $slug
+                ));
+
+                if ($existing_brand) {
+                    $results['skipped']++;
+                    $results['skipped_brands'][] = [
+                        'name' => $brand_name,
+                        'existing_name' => $existing_brand->name,
+                        'reason' => 'Brand already exists'
+                    ];
+                    $this->logger->debug('Skipping existing brand', [
+                        'api_brand' => $brand_name,
+                        'existing_brand' => $existing_brand->name
+                    ]);
+                    continue;
+                }
+
+                // Check if this is a default brand (should be active)
+                $default_brands = ['HP INC', 'DELL', 'LENOVO', 'APPLE', 'ASUS', 'BOSE', 'EPSON', 'JBL'];
+                $is_active = in_array(strtoupper($brand_name), $default_brands) ? 1 : 0;
+
+                // Create the brand
+                $description = sprintf(
+                    'Brand created from API - CodigoMarca: %s, CodigoCategoria: %s',
+                    $api_brand['CodigoMarca'] ?? 'N/A',
+                    $api_brand['CodigoCategoria'] ?? 'N/A'
+                );
+
+                $result = $wpdb->insert(
+                    $this->brands_table,
+                    [
+                        'name' => $brand_name,
+                        'slug' => $slug,
+                        'description' => $description,
+                        'is_active' => $is_active,
+                    ]
+                );
+
+                if ($result) {
+                    $brand_id = $wpdb->insert_id;
+                    $results['created']++;
+                    $results['created_brands'][] = [
+                        'id' => $brand_id,
+                        'name' => $brand_name,
+                        'codigo_marca' => $api_brand['CodigoMarca'] ?? null,
+                        'codigo_categoria' => $api_brand['CodigoCategoria'] ?? null
+                    ];
+
+                    // Automatically assign all categories to new brand
+                    $categories = $this->get_categories();
+                    foreach ($categories as $category) {
+                        $wpdb->insert(
+                            $this->brand_categories_table,
+                            [
+                                'brand_id' => $brand_id,
+                                'category_id' => $category->id,
+                            ]
+                        );
+                    }
+
+                    $this->logger->info('Created brand from API', [
+                        'brand_id' => $brand_id,
+                        'name' => $brand_name,
+                        'codigo_marca' => $api_brand['CodigoMarca'] ?? null,
+                        'is_active' => $is_active
+                    ]);
+                } else {
+                    $results['errors']++;
+                    $error_message = 'Database error creating brand: ' . $wpdb->last_error;
+                    $results['error_messages'][] = $error_message;
+                    $this->logger->error('Database error creating brand from API', [
+                        'brand_name' => $brand_name,
+                        'error' => $error_message
+                    ]);
+                }
+
+            } catch (Exception $e) {
+                $results['errors']++;
+                $error_message = 'Exception processing brand: ' . $e->getMessage();
+                $results['error_messages'][] = $error_message;
+                $this->logger->error('Exception processing brand from API', [
+                    'brand_data' => $api_brand,
+                    'error' => $error_message
+                ]);
+            }
+        }
+
+        $this->logger->info('Completed creating brands from API', [
+            'created' => $results['created'],
+            'skipped' => $results['skipped'],
+            'errors' => $results['errors']
+        ]);
+
+        return $results;
     }
 
     /**

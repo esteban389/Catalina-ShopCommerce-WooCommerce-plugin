@@ -317,6 +317,11 @@ function shopcommerce_register_ajax_handlers() {
     add_action('wp_ajax_shopcommerce_get_order_details', 'shopcommerce_ajax_get_order_details');
     add_action('wp_ajax_shopcommerce_update_existing_orders_metadata', 'shopcommerce_ajax_update_existing_orders_metadata');
     add_action('wp_ajax_shopcommerce_get_incomplete_orders', 'shopcommerce_ajax_get_incomplete_orders');
+
+    // Brands management from API
+    add_action('wp_ajax_shopcommerce_fetch_api_brands', 'shopcommerce_ajax_fetch_api_brands');
+    // Categories management from API
+    add_action('wp_ajax_shopcommerce_sync_categories', 'shopcommerce_ajax_sync_categories');
 }
 add_action('admin_init', 'shopcommerce_register_ajax_handlers');
 
@@ -2018,4 +2023,129 @@ function shopcommerce_ajax_get_incomplete_orders() {
             $total_orders
         ) : 'No orders to display'
     ]);
+}
+/**
+ * AJAX handler for fetching brands from ShopCommerce API
+ */
+function shopcommerce_ajax_fetch_api_brands() {
+    check_ajax_referer("shopcommerce_admin_nonce", "nonce");
+
+    if (!current_user_can("manage_options")) {
+        wp_send_json_error(["message" => "Insufficient permissions"]);
+    }
+
+    // Get API instance
+    $api = isset($GLOBALS["shopcommerce_api"]) ? $GLOBALS["shopcommerce_api"] : null;
+    if (!$api) {
+        wp_send_json_error(["message" => "API client not available"]);
+    }
+
+    // Get config manager
+    $config = isset($GLOBALS["shopcommerce_config"]) ? $GLOBALS["shopcommerce_config"] : null;
+    if (!$config) {
+        wp_send_json_error(["message" => "Configuration manager not available"]);
+    }
+
+    // Fetch brands from API
+    $api_brands = $api->get_brands();
+    if ($api_brands === null) {
+        wp_send_json_error(["message" => "Failed to fetch brands from API"]);
+    }
+
+    // Process brands and create new ones
+    $result = $config->create_brands_from_api($api_brands);
+
+    wp_send_json_success([
+        "message" => sprintf(
+            "Successfully processed %d brands from API. %d new brands created, %d already existed.",
+            $result["processed"],
+            $result["created"],
+            $result["existing"]
+        ),
+        "processed" => $result["processed"],
+        "created" => $result["created"],
+        "existing" => $result["existing"],
+        "new_brands" => $result["new_brands"]
+    ]);
+}
+
+/**
+ * AJAX handler for syncing categories from ShopCommerce API
+ */
+function shopcommerce_ajax_sync_categories() {
+    // Get logger if available
+    $logger = isset($GLOBALS['shopcommerce_logger']) ? $GLOBALS['shopcommerce_logger'] : null;
+
+    check_ajax_referer('shopcommerce_admin_nonce', 'nonce');
+
+    if (!current_user_can('manage_options')) {
+        if ($logger) {
+            $logger->warning('Unauthorized attempt to sync categories', [
+                'user_id' => get_current_user_id(),
+                'ip' => $_SERVER['REMOTE_ADDR'] ?? 'unknown'
+            ]);
+        }
+        wp_send_json_error(['message' => 'Insufficient permissions']);
+    }
+
+    // Get API instance
+    $api = isset($GLOBALS['shopcommerce_api']) ? $GLOBALS['shopcommerce_api'] : null;
+    if (!$api) {
+        if ($logger) {
+            $logger->error('API client not available for category sync');
+        }
+        wp_send_json_error(['message' => 'API client not available']);
+    }
+
+    // Get helpers instance
+    $helpers = isset($GLOBALS['shopcommerce_helpers']) ? $GLOBALS['shopcommerce_helpers'] : null;
+    if (!$helpers) {
+        if ($logger) {
+            $logger->error('Helpers not available for category sync');
+        }
+        wp_send_json_error(['message' => 'Helpers not available']);
+    }
+
+    if ($logger) {
+        $logger->info('Starting category sync from API');
+    }
+
+    // Fetch categories from API
+    $api_categories = $api->get_categories();
+    if ($api_categories === null) {
+        if ($logger) {
+            $logger->error('Failed to fetch categories from API');
+        }
+        wp_send_json_error(['message' => 'Failed to fetch categories from API']);
+    }
+
+    // Sync categories with WooCommerce
+    $result = $helpers->sync_categories_from_api($api_categories);
+
+    if ($logger) {
+        $logger->info('Category sync from API completed', [
+            'success' => $result['success'],
+            'created' => $result['created'],
+            'skipped' => $result['skipped'],
+            'errors' => count($result['errors'])
+        ]);
+    }
+
+    if ($result['success']) {
+        wp_send_json_success([
+            'message' => sprintf(
+                'Successfully synced plugin categories from API. %d new categories created, %d already existed.',
+                $result['created'],
+                $result['skipped']
+            ),
+            'created' => $result['created'],
+            'skipped' => $result['skipped'],
+            'errors' => $result['errors']
+        ]);
+    } else {
+        wp_send_json_error([
+            'message' => 'Failed to sync plugin categories from API',
+            'errors' => $result['errors']
+        ]);
+    }
 }

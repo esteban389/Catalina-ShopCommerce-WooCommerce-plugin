@@ -42,6 +42,8 @@ The plugin follows a modular architecture with recent additions:
 - **Order Integration**: Automatic detection of external provider products in orders
 - **Enhanced Logging**: Improved activity tracking and log management interface
 - **Brand Management**: Dedicated interface for managing brand configurations
+- **API Integration**: Automatic brand creation from API responses with duplicate detection
+- **Reset Functionality**: One-click reset to default configuration
 
 ### API Integration
 - **Base URL**: `https://shopcommerce.mps.com.co:7965/`
@@ -131,7 +133,7 @@ Since this is a WordPress plugin without a build system, development involves:
 ## File Structure Details
 
 ### Core Classes (Updated)
-- **ShopCommerce_Config**: Dynamic configuration management with database storage
+- **ShopCommerce_Config**: Dynamic configuration management with database storage, API brand creation, and reset functionality
 - **ShopCommerce_Logger**: Centralized logging with activity tracking
 - **ShopCommerce_API**: API client with token management and error handling
 - **ShopCommerce_Helpers**: Utility functions for WooCommerce operations
@@ -182,10 +184,10 @@ Since this is a WordPress plugin without a build system, development involves:
 
 ## Version Information
 
-- **Current Version**: 2.3.0 (as defined in index.php plugin header)
+- **Current Version**: 2.4.0 (as defined in index.php plugin header)
 - **Architecture Version**: 2.0.0+ (modular rewrite)
 - **Compatibility**: WordPress 5.0+, WooCommerce 3.0+, PHP 7.2+
-- **Note**: Version constant in index.php shows 2.0.0 but plugin header defines 2.3.0
+- **Note**: Version constant in index.php shows 2.0.0 but plugin header defines 2.4.0
 
 ## Database Schema
 
@@ -200,3 +202,6 @@ The plugin creates custom database tables for configuration management:
 - Tables are created automatically on plugin activation
 - Managed through ShopCommerce_Config class
 - Supports dynamic brand and category configuration through admin interface
+- Includes automatic initialization with default hardcoded brand/category relationships
+- Supports creating brands from API responses with duplicate detection
+- Provides reset functionality to restore default configuration

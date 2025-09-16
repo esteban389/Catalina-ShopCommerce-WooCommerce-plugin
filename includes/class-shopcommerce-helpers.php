@@ -126,6 +126,125 @@ class ShopCommerce_Helpers
     }
 
     /**
+     * Sync plugin categories from ShopCommerce API response
+     *
+     * @param array $api_categories Categories from API response
+     * @return array Results of category sync operation
+     */
+    public function sync_categories_from_api($api_categories) {
+        if (!is_array($api_categories)) {
+            $this->logger->error('Invalid categories data from API', ['data_type' => gettype($api_categories)]);
+            return [
+                'success' => false,
+                'created' => 0,
+                'skipped' => 0,
+                'errors' => ['Invalid categories data from API']
+            ];
+        }
+
+        // Get config manager to access category functions
+        $config = isset($GLOBALS['shopcommerce_config']) ? $GLOBALS['shopcommerce_config'] : null;
+        if (!$config) {
+            $this->logger->error('Config manager not available for category sync');
+            return [
+                'success' => false,
+                'created' => 0,
+                'skipped' => 0,
+                'errors' => ['Config manager not available']
+            ];
+        }
+
+        $results = [
+            'success' => true,
+            'created' => 0,
+            'skipped' => 0,
+            'errors' => []
+        ];
+
+        $this->logger->info('Starting category sync from API', ['category_count' => count($api_categories)]);
+
+        foreach ($api_categories as $category) {
+            if (!is_array($category) || !isset($category['Categoria'])) {
+                $this->logger->warning('Skipping invalid category data', ['category' => $category]);
+                $results['skipped']++;
+                continue;
+            }
+
+            $category_name = trim($category['Categoria']);
+            $category_slug = isset($category['slugcategory']) ? trim($category['slugcategory']) : '';
+            $category_code = isset($category['CodigoCategoria']) ? intval($category['CodigoCategoria']) : 0;
+
+            if (empty($category_name)) {
+                $this->logger->warning('Skipping category with empty name', ['category' => $category]);
+                $results['skipped']++;
+                continue;
+            }
+
+            if ($category_code <= 0) {
+                $this->logger->warning('Skipping category with invalid code', ['category' => $category]);
+                $results['skipped']++;
+                continue;
+            }
+
+            // Check if category already exists by code or name
+            global $wpdb;
+            $categories_table = $wpdb->prefix . 'shopcommerce_categories';
+
+            $existing_category = $wpdb->get_row($wpdb->prepare(
+                "SELECT id, name, code FROM {$categories_table} WHERE code = %d OR name = %s",
+                $category_code,
+                $category_name
+            ));
+
+            if ($existing_category) {
+                $this->logger->debug('Category already exists, skipping', [
+                    'category_name' => $category_name,
+                    'category_code' => $category_code,
+                    'existing_id' => $existing_category->id,
+                    'existing_name' => $existing_category->name,
+                    'existing_code' => $existing_category->code
+                ]);
+                $results['skipped']++;
+                continue;
+            }
+
+            // Use config manager's create_category method
+            $description = sprintf('Category synced from API: %s (Slug: %s)', $category_name, $category_slug);
+            $category_id = $config->create_category($category_name, $category_code, $description);
+
+            if ($category_id) {
+                $this->logger->info('Created new plugin category from API', [
+                    'category_name' => $category_name,
+                    'category_slug' => $category_slug,
+                    'category_code' => $category_code,
+                    'category_id' => $category_id
+                ]);
+                $results['created']++;
+
+                // Store additional metadata as term meta for future reference
+                if (!empty($category_slug)) {
+                    update_term_meta($category_id, 'shopcommerce_category_slug', $category_slug);
+                }
+            } else {
+                $this->logger->error('Failed to create plugin category from API', [
+                    'category_name' => $category_name,
+                    'category_slug' => $category_slug,
+                    'category_code' => $category_code
+                ]);
+                $results['errors'][] = "Failed to create '{$category_name}' (Code: {$category_code})";
+            }
+        }
+
+        $this->logger->info('Plugin category sync completed', [
+            'created' => $results['created'],
+            'skipped' => $results['skipped'],
+            'errors' => count($results['errors'])
+        ]);
+
+        return $results;
+    }
+
+    /**
      * Attach product image from URL
      *
      * @param string $image_url Image URL
