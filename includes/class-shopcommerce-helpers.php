@@ -469,11 +469,17 @@ class ShopCommerce_Helpers {
     }
 
     /**
-     * Get sync configuration
+     * Get sync configuration (now uses dynamic config)
      *
      * @return array Sync configuration
      */
     public function get_sync_config() {
+        // Use dynamic configuration if available, fallback to hardcoded for backward compatibility
+        if (isset($GLOBALS['shopcommerce_config'])) {
+            return $GLOBALS['shopcommerce_config']->get_sync_config();
+        }
+
+        // Fallback to hardcoded configuration
         return [
             // Category Codes reference
             'CATEGORIA_ACCESORIOS' => 1,
@@ -509,6 +515,12 @@ class ShopCommerce_Helpers {
      * @return array List of sync jobs
      */
     public function build_jobs_list() {
+        // Use dynamic configuration if available, fallback to hardcoded
+        if (isset($GLOBALS['shopcommerce_config'])) {
+            return $GLOBALS['shopcommerce_config']->build_jobs_list();
+        }
+
+        // Fallback to hardcoded configuration
         $config = $this->get_sync_config();
         $jobs = [];
 

@@ -147,7 +147,13 @@ class ShopCommerce_Cron {
      * @return array List of sync jobs
      */
     public function build_jobs_list() {
-        // This will be handled by the helpers class
+        // Use dynamic configuration from config manager
+        if (isset($GLOBALS['shopcommerce_config'])) {
+            $config = $GLOBALS['shopcommerce_config'];
+            return $config->build_jobs_list();
+        }
+
+        // Fallback to helpers if available
         if (isset($GLOBALS['shopcommerce_helpers'])) {
             $helpers = $GLOBALS['shopcommerce_helpers'];
             return $helpers->build_jobs_list();
@@ -210,6 +216,36 @@ class ShopCommerce_Cron {
         delete_option(self::JOBS_OPTION_KEY);
         delete_option(self::JOB_INDEX_OPTION_KEY);
         $this->logger->info('Reset sync jobs');
+    }
+
+    /**
+     * Rebuild jobs from dynamic configuration
+     *
+     * @return bool True if rebuild was successful
+     */
+    public function rebuild_jobs() {
+        try {
+            $this->logger->info('Rebuilding jobs from dynamic configuration');
+
+            // Build new jobs list
+            $new_jobs = $this->build_jobs_list();
+
+            // Update jobs configuration
+            $result = $this->update_jobs($new_jobs);
+
+            if ($result) {
+                // Reset job index to start from beginning
+                update_option(self::JOB_INDEX_OPTION_KEY, 0, false);
+                $this->logger->info('Jobs rebuilt successfully', ['job_count' => count($new_jobs)]);
+                return true;
+            }
+
+            return false;
+
+        } catch (Exception $e) {
+            $this->logger->error('Error rebuilding jobs', ['error' => $e->getMessage()]);
+            return false;
+        }
     }
 
     /**

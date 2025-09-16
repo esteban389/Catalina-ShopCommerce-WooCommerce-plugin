@@ -3,7 +3,7 @@
 /**
  * Plugin Name:       ShopCommerce Product Sync Plugin
  * Description:       A plugin to sync products from ShopCommerce with WooCommerce, specially for Hekalsoluciones.
- * Version:           2.1.0
+ * Version:           2.2.0
  * Author:            Esteban Andres Murcia Acuña
  * Author URI:        https://estebanmurcia.dev/
  * License:           GPL-2.0+
@@ -31,6 +31,7 @@ require_once SHOPCOMMERCE_SYNC_INCLUDES_DIR . 'class-shopcommerce-helpers.php';
 require_once SHOPCOMMERCE_SYNC_INCLUDES_DIR . 'class-shopcommerce-product.php';
 require_once SHOPCOMMERCE_SYNC_INCLUDES_DIR . 'class-shopcommerce-cron.php';
 require_once SHOPCOMMERCE_SYNC_INCLUDES_DIR . 'class-shopcommerce-sync.php';
+require_once SHOPCOMMERCE_SYNC_INCLUDES_DIR . 'class-shopcommerce-config.php';
 
 // Include admin functions
 require_once SHOPCOMMERCE_SYNC_INCLUDES_DIR . 'functions-admin.php';
@@ -40,6 +41,9 @@ function shopcommerce_sync_init()
 {
     // Initialize the logger first
     $logger = new ShopCommerce_Logger();
+
+    // Initialize configuration manager
+    $config_manager = new ShopCommerce_Config($logger);
 
     // Initialize the API client
     $api_client = new ShopCommerce_API($logger);
@@ -58,6 +62,7 @@ function shopcommerce_sync_init()
 
     // Make instances available globally if needed
     $GLOBALS['shopcommerce_logger'] = $logger;
+    $GLOBALS['shopcommerce_config'] = $config_manager;
     $GLOBALS['shopcommerce_api'] = $api_client;
     $GLOBALS['shopcommerce_helpers'] = $helpers;
     $GLOBALS['shopcommerce_product'] = $product_handler;
