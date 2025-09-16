@@ -8,9 +8,8 @@
  *
  * @package ShopCommerce_Sync
  */
-
-class ShopCommerce_Helpers {
-
+class ShopCommerce_Helpers
+{
     /**
      * Logger instance
      */
@@ -21,7 +20,8 @@ class ShopCommerce_Helpers {
      *
      * @param ShopCommerce_Logger $logger Logger instance
      */
-    public function __construct($logger) {
+    public function __construct($logger)
+    {
         $this->logger = $logger;
     }
 
@@ -31,7 +31,8 @@ class ShopCommerce_Helpers {
      * @param string $sku Product SKU to search for
      * @return WC_Product|null Found product object or null
      */
-    public function get_product_by_sku($sku) {
+    public function get_product_by_sku($sku)
+    {
         if (empty($sku)) {
             return null;
         }
@@ -92,7 +93,8 @@ class ShopCommerce_Helpers {
      * @param string $category_name Category name
      * @return int|null Category ID or null on failure
      */
-    public function get_or_create_category($category_name) {
+    public function get_or_create_category($category_name)
+    {
         if (empty($category_name)) {
             return null;
         }
@@ -130,7 +132,8 @@ class ShopCommerce_Helpers {
      * @param string $product_name Product name for image title
      * @return int|null Attachment ID or null on failure
      */
-    public function attach_product_image($image_url, $product_name) {
+    public function attach_product_image($image_url, $product_name)
+    {
         if (empty($image_url) || !filter_var($image_url, FILTER_VALIDATE_URL)) {
             $this->logger->warning('Invalid image URL', ['image_url' => $image_url]);
             return null;
@@ -162,11 +165,17 @@ class ShopCommerce_Helpers {
         }
 
         // Get file info
-        $file_info = wp_check_filetype_and_ext(basename($image_url), 'image');
-        if (!$file_info['type'] || !in_array($file_info['type'], ['image/jpeg', 'image/jpg', 'image/png', 'image/gif'])) {
+        $file_info = wp_check_filetype(basename($image_url), [
+            'jpg' => 'image/jpeg',
+            'jpeg' => 'image/jpeg',
+            'png' => 'image/png',
+            'gif' => 'image/gif',
+        ]);
+
+        if (empty($file_info['type'])) {
             $this->logger->error('Invalid image type', [
                 'image_url' => $image_url,
-                'file_info' => $file_info
+                'file_info' => $file_info,
             ]);
             return null;
         }
@@ -179,6 +188,18 @@ class ShopCommerce_Helpers {
                 'image_url' => $image_url,
                 'error' => $upload->get_error_message()
             ]);
+            return null;
+        }
+
+        // Now check file type properly
+        $file_info = wp_check_filetype_and_ext($upload['file'], basename($upload['file']));
+        if (empty($file_info['type']) || !in_array($file_info['type'], ['image/jpeg', 'image/jpg', 'image/png', 'image/gif'])) {
+            $this->logger->error('Invalid image type after upload', [
+                'image_url' => $image_url,
+                'file_info' => $file_info,
+                'upload' => $upload,
+            ]);
+            @unlink($upload['file']);  // Clean up invalid file
             return null;
         }
 
@@ -201,7 +222,7 @@ class ShopCommerce_Helpers {
         }
 
         // Generate attachment metadata
-        require_once(ABSPATH . 'wp-admin/includes/image.php');
+        require_once (ABSPATH . 'wp-admin/includes/image.php');
         $attach_data = wp_generate_attachment_metadata($attachment_id, $upload['file']);
         wp_update_attachment_metadata($attachment_id, $attach_data);
 
@@ -223,7 +244,8 @@ class ShopCommerce_Helpers {
      * @param string $image_url Image URL to search for
      * @return int|null Attachment ID or null if not found
      */
-    public function get_image_by_url($image_url) {
+    public function get_image_by_url($image_url)
+    {
         global $wpdb;
 
         $attachment_id = $wpdb->get_var($wpdb->prepare(
@@ -240,7 +262,8 @@ class ShopCommerce_Helpers {
      * @param array $product_data Product data from API
      * @return string|null Extracted SKU or null if not found
      */
-    public function extract_sku($product_data) {
+    public function extract_sku($product_data)
+    {
         if (!is_array($product_data)) {
             return null;
         }
@@ -270,7 +293,8 @@ class ShopCommerce_Helpers {
      * @param string|null $sku Product SKU
      * @return string Cache key
      */
-    public function generate_cache_key($product_data, $sku = null) {
+    public function generate_cache_key($product_data, $sku = null)
+    {
         if (!empty($sku)) {
             return $sku;
         }
@@ -290,7 +314,8 @@ class ShopCommerce_Helpers {
      * @param array $product_data Raw product data
      * @return array Sanitized product data
      */
-    public function sanitize_product_data($product_data) {
+    public function sanitize_product_data($product_data)
+    {
         if (!is_array($product_data)) {
             return [];
         }
@@ -347,7 +372,8 @@ class ShopCommerce_Helpers {
      * @param string $xml_attributes_json JSON string containing XML attributes
      * @return array List of formatted attributes [name => value]
      */
-    public function parse_xml_attributes($xml_attributes_json) {
+    public function parse_xml_attributes($xml_attributes_json)
+    {
         if (empty($xml_attributes_json)) {
             return [];
         }
@@ -393,7 +419,6 @@ class ShopCommerce_Helpers {
                 'original_json' => $xml_attributes_json,
                 'parsed_attributes' => $attributes
             ]);
-
         } catch (Exception $e) {
             $this->logger->error('Error parsing XML attributes', [
                 'error' => $e->getMessage(),
@@ -411,7 +436,8 @@ class ShopCommerce_Helpers {
      * @param array $attributes Parsed attributes from parse_xml_attributes()
      * @return string Formatted HTML list
      */
-    public function format_xml_attributes_html($attributes) {
+    public function format_xml_attributes_html($attributes)
+    {
         if (empty($attributes)) {
             return '';
         }
@@ -438,7 +464,8 @@ class ShopCommerce_Helpers {
      *
      * @return bool True if WooCommerce is active
      */
-    public function is_woocommerce_active() {
+    public function is_woocommerce_active()
+    {
         return in_array('woocommerce/woocommerce.php', apply_filters('active_plugins', get_option('active_plugins')));
     }
 
@@ -447,7 +474,8 @@ class ShopCommerce_Helpers {
      *
      * @return array Test results
      */
-    public function test_xml_attributes_parsing() {
+    public function test_xml_attributes_parsing()
+    {
         $test_json = '{"ListaAtributos":{"Atributos":{"attributecs":{"AttributeName":"ALTURA DEL PAQUETE DE ENVÍO","AttributeValue":null}}}}';
 
         $this->logger->info('Testing XML attributes parsing', ['test_json' => $test_json]);
@@ -473,7 +501,8 @@ class ShopCommerce_Helpers {
      *
      * @return array Sync configuration
      */
-    public function get_sync_config() {
+    public function get_sync_config()
+    {
         // Use dynamic configuration if available, fallback to hardcoded for backward compatibility
         if (isset($GLOBALS['shopcommerce_config'])) {
             return $GLOBALS['shopcommerce_config']->get_sync_config();
@@ -487,15 +516,13 @@ class ShopCommerce_Helpers {
             'CATEGORIA_IMPRESION' => 12,
             'CATEGORIA_VIDEO' => 14,  // Monitores
             'CATEGORIA_SERVIDORES' => 18,
-
             'common_corp_categories' => [
                 7,  // pcs, portátiles, wkst
-                18, // servidores volumen/valor
+                18,  // servidores volumen/valor
                 1,  // accesorios
-                14, // monitores
-                12, // impresión
+                14,  // monitores
+                12,  // impresión
             ],
-
             'brand_config' => [
                 'HP INC' => [1, 7, 12, 14, 18],
                 'DELL' => [1, 7, 12, 14, 18],
@@ -514,7 +541,8 @@ class ShopCommerce_Helpers {
      *
      * @return array List of sync jobs
      */
-    public function build_jobs_list() {
+    public function build_jobs_list()
+    {
         // Use dynamic configuration if available, fallback to hardcoded
         if (isset($GLOBALS['shopcommerce_config'])) {
             return $GLOBALS['shopcommerce_config']->build_jobs_list();
@@ -539,7 +567,8 @@ class ShopCommerce_Helpers {
      *
      * @return array Product sync statistics
      */
-    public function get_sync_statistics() {
+    public function get_sync_statistics()
+    {
         global $wpdb;
 
         // Count products synced by this plugin (excluding trashed)
@@ -591,7 +620,8 @@ class ShopCommerce_Helpers {
      * @param array $args Filter arguments
      * @return array Products data
      */
-    public function get_external_provider_products($args = []) {
+    public function get_external_provider_products($args = [])
+    {
         global $wpdb;
 
         $defaults = [
@@ -611,7 +641,7 @@ class ShopCommerce_Helpers {
 
         // Status filter
         if ($args['status'] !== 'all') {
-            $where_clauses[] = $wpdb->prepare("p.post_status = %s", $args['status']);
+            $where_clauses[] = $wpdb->prepare('p.post_status = %s', $args['status']);
         } else {
             // Exclude trash by default when showing 'all'
             $where_clauses[] = "p.post_status != 'trash'";
@@ -620,7 +650,7 @@ class ShopCommerce_Helpers {
         // Search filter
         if (!empty($args['search'])) {
             $search_like = '%' . $wpdb->esc_like($args['search']) . '%';
-            $where_clauses[] = $wpdb->prepare("(p.post_title LIKE %s OR p.post_content LIKE %s)", $search_like, $search_like);
+            $where_clauses[] = $wpdb->prepare('(p.post_title LIKE %s OR p.post_content LIKE %s)', $search_like, $search_like);
         }
 
         // Join with postmeta for additional product data
@@ -633,7 +663,7 @@ class ShopCommerce_Helpers {
 
         // Brand filter
         if (!empty($args['brand'])) {
-            $where_clauses[] = $wpdb->prepare("pm2.meta_value = %s", $args['brand']);
+            $where_clauses[] = $wpdb->prepare('pm2.meta_value = %s', $args['brand']);
         }
 
         // Build query
@@ -694,7 +724,8 @@ class ShopCommerce_Helpers {
      * @param array $args Filter arguments
      * @return int Number of products
      */
-    public function get_external_provider_products_count($args = []) {
+    public function get_external_provider_products_count($args = [])
+    {
         global $wpdb;
 
         $defaults = [
@@ -710,7 +741,7 @@ class ShopCommerce_Helpers {
 
         // Status filter
         if ($args['status'] !== 'all') {
-            $where_clauses[] = $wpdb->prepare("p.post_status = %s", $args['status']);
+            $where_clauses[] = $wpdb->prepare('p.post_status = %s', $args['status']);
         } else {
             // Exclude trash by default when showing 'all'
             $where_clauses[] = "p.post_status != 'trash'";
@@ -719,7 +750,7 @@ class ShopCommerce_Helpers {
         // Search filter
         if (!empty($args['search'])) {
             $search_like = '%' . $wpdb->esc_like($args['search']) . '%';
-            $where_clauses[] = $wpdb->prepare("(p.post_title LIKE %s OR p.post_content LIKE %s)", $search_like, $search_like);
+            $where_clauses[] = $wpdb->prepare('(p.post_title LIKE %s OR p.post_content LIKE %s)', $search_like, $search_like);
         }
 
         // Join with postmeta for brand data (always include for consistency)
@@ -727,7 +758,7 @@ class ShopCommerce_Helpers {
 
         // Brand filter
         if (!empty($args['brand'])) {
-            $where_clauses[] = $wpdb->prepare("pm2.meta_value = %s", $args['brand']);
+            $where_clauses[] = $wpdb->prepare('pm2.meta_value = %s', $args['brand']);
         }
 
         $where_sql = 'WHERE ' . implode(' AND ', $where_clauses);
@@ -752,7 +783,8 @@ class ShopCommerce_Helpers {
      *
      * @return array List of brands
      */
-    public function get_external_provider_brands() {
+    public function get_external_provider_brands()
+    {
         global $wpdb;
 
         $brands = $wpdb->get_col(

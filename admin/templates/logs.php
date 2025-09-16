@@ -196,10 +196,13 @@ $log_file_path = SHOPCOMMERCE_SYNC_LOGS_DIR . 'shopcommerce-sync.log';
                             </td>
                             <td class="log-context">
                                 <?php if (!empty($context)): ?>
-                                    <details>
-                                        <summary><?php _e('View Context', 'shopcommerce-sync'); ?></summary>
-                                        <pre class="log-context-data"><?php echo esc_html(json_encode($context, JSON_PRETTY_PRINT)); ?></pre>
-                                    </details>
+                                    <button type="button"
+                                            class="button button-small view-context-btn"
+                                            data-context="<?php echo esc_attr(json_encode($context)); ?>"
+                                            data-level="<?php echo esc_attr($level); ?>"
+                                            data-message="<?php echo esc_attr(substr($message, 0, 100)); ?>">
+                                        <?php _e('View Context', 'shopcommerce-sync'); ?>
+                                    </button>
                                 <?php else: ?>
                                     <span class="log-no-context"><?php _e('None', 'shopcommerce-sync'); ?></span>
                                 <?php endif; ?>
@@ -318,6 +321,37 @@ $log_file_path = SHOPCOMMERCE_SYNC_LOGS_DIR . 'shopcommerce-sync.log';
     <?php endif; ?>
 </div>
 
+<!-- Context Modal -->
+<div id="context-modal" class="shopcommerce-modal" style="display: none;">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3><?php _e('Log Context Details', 'shopcommerce-sync'); ?></h3>
+            <button type="button" class="close-modal">&times;</button>
+        </div>
+        <div class="modal-body">
+            <div class="log-info">
+                <div class="log-info-item">
+                    <strong><?php _e('Level:', 'shopcommerce-sync'); ?></strong>
+                    <span id="modal-level" class="log-level-badge"></span>
+                </div>
+                <div class="log-info-item">
+                    <strong><?php _e('Message:', 'shopcommerce-sync'); ?></strong>
+                    <span id="modal-message"></span>
+                </div>
+            </div>
+            <div class="context-content">
+                <h4><?php _e('Context Data:', 'shopcommerce-sync'); ?></h4>
+                <pre id="modal-context" class="log-context-data"></pre>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button type="button" class="button button-primary close-modal">
+                <?php _e('Close', 'shopcommerce-sync'); ?>
+            </button>
+        </div>
+    </div>
+</div>
+
 <style>
 .log-viewer-info {
     margin-bottom: 20px;
@@ -420,17 +454,122 @@ $log_file_path = SHOPCOMMERCE_SYNC_LOGS_DIR . 'shopcommerce-sync.log';
     background-color: rgba(139, 0, 0, 0.05);
 }
 
-details {
+/* Modal Styles */
+.shopcommerce-modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.6);
+    z-index: 100000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.shopcommerce-modal .modal-content {
+    background: #fff;
+    border-radius: 4px;
+    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
+    width: 90%;
+    max-width: 800px;
+    max-height: 90vh;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+}
+
+.shopcommerce-modal .modal-header {
+    padding: 16px 24px;
+    border-bottom: 1px solid #ddd;
+    background: #fbfbfb;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.shopcommerce-modal .modal-header h3 {
+    margin: 0;
+    font-size: 18px;
+    color: #23282d;
+}
+
+.shopcommerce-modal .close-modal {
+    background: none;
+    border: none;
+    font-size: 20px;
+    color: #666;
     cursor: pointer;
+    padding: 4px 8px;
+    line-height: 1;
 }
 
-details summary {
-    color: #0073aa;
-    font-weight: normal;
+.shopcommerce-modal .close-modal:hover {
+    color: #000;
 }
 
-details summary:hover {
-    text-decoration: underline;
+.shopcommerce-modal .modal-body {
+    padding: 24px;
+    overflow-y: auto;
+    flex: 1;
+}
+
+.shopcommerce-modal .modal-footer {
+    padding: 16px 24px;
+    border-top: 1px solid #ddd;
+    background: #fbfbfb;
+    text-align: right;
+}
+
+.shopcommerce-modal .log-info {
+    margin-bottom: 20px;
+    padding: 16px;
+    background: #f8f9fa;
+    border-radius: 4px;
+}
+
+.shopcommerce-modal .log-info-item {
+    margin-bottom: 8px;
+}
+
+.shopcommerce-modal .log-info-item:last-child {
+    margin-bottom: 0;
+}
+
+.shopcommerce-modal .log-info-item strong {
+    display: inline-block;
+    min-width: 80px;
+}
+
+.shopcommerce-modal .context-content h4 {
+    margin: 0 0 12px 0;
+    font-size: 14px;
+    color: #23282d;
+}
+
+.shopcommerce-modal .log-context-data {
+    background: #f8f9fa;
+    border: 1px solid #e5e5e5;
+    padding: 16px;
+    border-radius: 4px;
+    font-size: 13px;
+    max-height: 400px;
+    overflow-y: auto;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+.view-context-btn {
+    font-size: 12px !important;
+    height: 28px !important;
+    line-height: 26px !important;
+    padding: 0 8px !important;
+}
+
+/* Remove details styling since we're using buttons now */
+.log-context details {
+    display: none;
 }
 
 @media screen and (max-width: 782px) {
@@ -448,6 +587,72 @@ details summary:hover {
 </style>
 
 <script>
+jQuery(document).ready(function($) {
+    // Context modal functionality
+    function showContextModal(context, level, message) {
+        var modal = $('#context-modal');
+
+        // Set the level badge
+        var levelBadge = $('#modal-level');
+        levelBadge.text(level.charAt(0).toUpperCase() + level.slice(1));
+        levelBadge.removeClass('log-level-debug log-level-info log-level-warning log-level-error log-level-critical');
+        levelBadge.addClass('log-level-' + level);
+
+        // Set the message
+        $('#modal-message').text(message + (message.length >= 100 ? '...' : ''));
+
+        // Format and set the context data
+        try {
+            var contextData = typeof context === 'string' ? JSON.parse(context) : context;
+            $('#modal-context').text(JSON.stringify(contextData, null, 2));
+        } catch (e) {
+            $('#modal-context').text(context);
+        }
+
+        // Show modal
+        modal.fadeIn(200);
+
+        // Focus on close button for accessibility
+        modal.find('.close-modal').focus();
+    }
+
+    function hideContextModal() {
+        $('#context-modal').fadeOut(200);
+    }
+
+    // View context button clicks
+    $(document).on('click', '.view-context-btn', function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+
+        var button = $(this);
+        var context = button.data('context');
+        var level = button.data('level');
+        var message = button.data('message');
+
+        showContextModal(context, level, message);
+    });
+
+    // Close modal events
+    $(document).on('click', '.close-modal', function(e) {
+        e.preventDefault();
+        hideContextModal();
+    });
+
+    $(document).on('click', '.shopcommerce-modal', function(e) {
+        if (e.target === this) {
+            hideContextModal();
+        }
+    });
+
+    // Escape key to close modal
+    $(document).on('keydown', function(e) {
+        if (e.key === 'Escape' && $('#context-modal').is(':visible')) {
+            hideContextModal();
+        }
+    });
+});
+
 function shopcommerce_clear_log_file() {
     if (!confirm('<?php _e('Are you sure you want to clear the log file? This action cannot be undone.', 'shopcommerce-sync'); ?>')) {
         return;
