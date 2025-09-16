@@ -310,6 +310,9 @@ function shopcommerce_register_ajax_handlers() {
     // Product edit tracking
     add_action('wp_ajax_shopcommerce_get_product_edit_history', 'shopcommerce_ajax_get_product_edit_history');
 
+    // Product details modal
+    add_action('wp_ajax_shopcommerce_get_product_details', 'shopcommerce_ajax_get_product_details');
+
     // Reset brands and categories
     add_action('wp_ajax_shopcommerce_reset_brands_categories', 'shopcommerce_ajax_reset_brands_categories');
 
@@ -1118,6 +1121,279 @@ function shopcommerce_ajax_get_product_edit_history() {
         'edited_by' => $editor_name,
         'total_changes' => is_array($edited_fields) ? count($edited_fields) : 0
     ]);
+}
+
+/**
+ * AJAX handler for getting product details modal content
+ */
+function shopcommerce_ajax_get_product_details() {
+    check_ajax_referer('shopcommerce_admin_nonce', 'nonce');
+
+    if (!current_user_can('manage_options')) {
+        wp_send_json_error(['error' => 'Insufficient permissions']);
+    }
+
+    $product_id = isset($_POST['product_id']) ? intval($_POST['product_id']) : 0;
+    if (!$product_id) {
+        wp_send_json_error(['error' => 'Invalid product ID']);
+    }
+
+    $product = wc_get_product($product_id);
+    if (!$product) {
+        wp_send_json_error(['error' => 'Product not found']);
+    }
+
+    // Get helpers if available
+    $helpers = isset($GLOBALS['shopcommerce_helpers']) ? $GLOBALS['shopcommerce_helpers'] : null;
+    $logger = isset($GLOBALS['shopcommerce_logger']) ? $GLOBALS['shopcommerce_logger'] : null;
+
+    // Get ShopCommerce metadata
+    $shopcommerce_metadata = [];
+    if (function_exists('shopcommerce_get_product_shopcommerce_metadata')) {
+        $shopcommerce_metadata = shopcommerce_get_product_shopcommerce_metadata($product);
+    }
+
+    // Get warehouse information
+    $warehouse_info = [];
+    if ($helpers) {
+        $warehouse_info = $helpers->get_product_warehouse_stock($product);
+    }
+
+    // Get product image
+    $image_id = $product->get_image_id();
+    $image_url = $image_id ? wp_get_attachment_image_url($image_id, 'medium') : '';
+    $image_html = $product->get_image('medium', ['class' => 'product-image']);
+
+    // Build HTML for the modal
+    ob_start();
+    ?>
+    <div class="product-details-grid">
+        <!-- Basic Product Information -->
+        <div class="details-section">
+            <h4>Basic Information</h4>
+            <table class="widefat">
+                <tr>
+                    <th width="30%">Product ID</th>
+                    <td><?php echo $product->get_id(); ?></td>
+                </tr>
+                <tr>
+                    <th>Name</th>
+                    <td><?php echo esc_html($product->get_name()); ?></td>
+                </tr>
+                <tr>
+                    <th>SKU</th>
+                    <td><?php echo esc_html($product->get_sku()); ?></td>
+                </tr>
+                <tr>
+                    <th>Price</th>
+                    <td><?php echo wc_price($product->get_price()); ?></td>
+                </tr>
+                <tr>
+                    <th>Status</th>
+                    <td>
+                        <span class="status-<?php echo $product->get_status(); ?>">
+                            <?php echo ucfirst($product->get_status()); ?>
+                        </span>
+                    </td>
+                </tr>
+                <tr>
+                    <th>Stock Status</th>
+                    <td>
+                        <span class="stock-<?php echo $product->get_stock_status(); ?>">
+                            <?php echo ucfirst(str_replace('_', ' ', $product->get_stock_status())); ?>
+                        </span>
+                        <?php if ($product->get_manage_stock()): ?>
+                            (<?php echo $product->get_stock_quantity(); ?> available)
+                        <?php endif; ?>
+                    </td>
+                </tr>
+            </table>
+        </div>
+
+        <!-- Product Image -->
+        <div class="details-section">
+            <h4>Product Image</h4>
+            <div class="product-image-container">
+                <?php echo $image_html; ?>
+                <?php if ($image_url): ?>
+                    <p><a href="<?php echo esc_url($image_url); ?>" target="_blank">View Full Size</a></p>
+                <?php endif; ?>
+            </div>
+        </div>
+
+        <!-- ShopCommerce Metadata -->
+        <div class="details-section">
+            <h4>ShopCommerce Metadata</h4>
+            <table class="widefat">
+                <tr>
+                    <th width="30%">External Provider</th>
+                    <td><?php echo esc_html($shopcommerce_metadata['external_provider'] ?: 'N/A'); ?></td>
+                </tr>
+                <tr>
+                    <th>Provider Brand</th>
+                    <td><?php echo esc_html($shopcommerce_metadata['external_provider_brand'] ?: 'N/A'); ?></td>
+                </tr>
+                <tr>
+                    <th>Part Number</th>
+                    <td><?php echo esc_html($shopcommerce_metadata['part_num'] ?: 'N/A'); ?></td>
+                </tr>
+                <tr>
+                    <th>Marks</th>
+                    <td><?php echo esc_html($shopcommerce_metadata['marks'] ?: 'N/A'); ?></td>
+                </tr>
+                <tr>
+                    <th>ShopCommerce SKU</th>
+                    <td><?php echo esc_html($shopcommerce_metadata['shopcommerce_sku'] ?: 'N/A'); ?></td>
+                </tr>
+                <tr>
+                    <th>Last Sync Date</th>
+                    <td><?php echo $shopcommerce_metadata['sync_date'] ? date('Y-m-d H:i:s', strtotime($shopcommerce_metadata['sync_date'])) : 'N/A'; ?></td>
+                </tr>
+            </table>
+        </div>
+
+        <!-- Warehouse Information -->
+        <?php if (!empty($warehouse_info)): ?>
+        <div class="details-section">
+            <h4>Warehouse Information</h4>
+            <table class="widefat">
+                <thead>
+                    <tr>
+                        <th>Warehouse</th>
+                        <th>Stock</th>
+                        <th>Location</th>
+                        <th>Available</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php foreach ($warehouse_info as $warehouse): ?>
+                    <tr>
+                        <td><?php echo esc_html($warehouse['warehouse']); ?></td>
+                        <td><?php echo $warehouse['stock']; ?></td>
+                        <td><?php echo esc_html($warehouse['location']); ?></td>
+                        <td>
+                            <span class="<?php echo $warehouse['available'] ? 'available' : 'unavailable'; ?>">
+                                <?php echo $warehouse['available'] ? 'Yes' : 'No'; ?>
+                            </span>
+                        </td>
+                    </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+            <?php if ($helpers): ?>
+            <p><strong>Total Stock Across All Warehouses:</strong> <?php echo $helpers->get_total_warehouse_stock($product); ?></p>
+            <?php endif; ?>
+        </div>
+        <?php endif; ?>
+
+        <!-- Product Description -->
+        <div class="details-section full-width">
+            <h4>Description</h4>
+            <div class="product-description">
+                <?php echo $product->get_description(); ?>
+            </div>
+        </div>
+
+        <!-- Product Categories -->
+        <?php
+        $categories = $product->get_category_ids();
+        if (!empty($categories)):
+        ?>
+        <div class="details-section">
+            <h4>Categories</h4>
+            <ul class="product-categories">
+                <?php foreach ($categories as $category_id): ?>
+                    <?php
+                    $category = get_term($category_id, 'product_cat');
+                    if ($category && !is_wp_error($category)):
+                    ?>
+                    <li><?php echo esc_html($category->name); ?></li>
+                    <?php endif; ?>
+                <?php endforeach; ?>
+            </ul>
+        </div>
+        <?php endif; ?>
+
+        <!-- Product Links -->
+        <div class="details-section">
+            <h4>Quick Links</h4>
+            <div class="product-links">
+                <a href="<?php echo get_edit_post_link($product->get_id()); ?>" class="button" target="_blank">Edit Product</a>
+                <a href="<?php echo get_permalink($product->get_id()); ?>" class="button" target="_blank">View Product</a>
+            </div>
+        </div>
+    </div>
+
+    <style>
+    .product-details-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 20px;
+    }
+    .details-section.full-width {
+        grid-column: 1 / -1;
+    }
+    .details-section h4 {
+        margin: 0 0 10px 0;
+        padding: 0;
+        font-size: 14px;
+        font-weight: 600;
+        color: #23282d;
+        border-bottom: 1px solid #eee;
+        padding-bottom: 5px;
+    }
+    .details-section table {
+        margin: 0;
+    }
+    .details-section table th {
+        font-weight: 600;
+        color: #23282d;
+    }
+    .product-image-container {
+        text-align: center;
+    }
+    .product-image-container img {
+        max-width: 100%;
+        height: auto;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+    }
+    .product-description {
+        max-height: 200px;
+        overflow-y: auto;
+        padding: 10px;
+        background: #f9f9f9;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+    }
+    .product-categories {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+    }
+    .product-categories li {
+        padding: 5px 0;
+        border-bottom: 1px solid #eee;
+    }
+    .product-categories li:last-child {
+        border-bottom: none;
+    }
+    .product-links {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+    }
+    .status-publish { color: #46b450; font-weight: 600; }
+    .status-draft { color: #ffb900; font-weight: 600; }
+    .stock-instock { color: #46b450; font-weight: 600; }
+    .stock-outofstock { color: #dc3232; font-weight: 600; }
+    .available { color: #46b450; font-weight: 600; }
+    .unavailable { color: #dc3232; font-weight: 600; }
+    </style>
+    <?php
+    $html = ob_get_clean();
+
+    wp_send_json_success(['html' => $html]);
 }
 
 /**

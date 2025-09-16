@@ -464,8 +464,35 @@ class ShopCommerce_Helpers
 
         // Other fields
         $sanitized['Marks'] = isset($product_data['Marks']) ? sanitize_text_field($product_data['Marks']) : '';
+        $sanitized['PartNum'] = isset($product_data['PartNum']) ? sanitize_text_field($product_data['PartNum']) : '';
         $sanitized['Categoria'] = isset($product_data['Categoria']) ? sanitize_text_field($product_data['Categoria']) : '';
         $sanitized['CategoriaDescripcion'] = isset($product_data['CategoriaDescripcion']) ? sanitize_text_field($product_data['CategoriaDescripcion']) : '';
+
+        // Handle ListaProductosBodega (array of objects)
+        if (isset($product_data['ListaProductosBodega']) && is_array($product_data['ListaProductosBodega'])) {
+            $sanitized['ListaProductosBodega'] = [];
+            foreach ($product_data['ListaProductosBodega'] as $bodega_item) {
+                if (is_array($bodega_item)) {
+                    $sanitized_bodega_item = [];
+                    foreach ($bodega_item as $key => $value) {
+                        // Sanitize keys and values appropriately
+                        $sanitized_key = sanitize_key($key);
+                        if (is_numeric($value)) {
+                            $sanitized_bodega_item[$sanitized_key] = floatval($value);
+                        } elseif (is_string($value)) {
+                            $sanitized_bodega_item[$sanitized_key] = sanitize_text_field($value);
+                        } elseif (is_bool($value)) {
+                            $sanitized_bodega_item[$sanitized_key] = (bool)$value;
+                        } else {
+                            $sanitized_bodega_item[$sanitized_key] = $value;
+                        }
+                    }
+                    $sanitized['ListaProductosBodega'][] = $sanitized_bodega_item;
+                }
+            }
+        } else {
+            $sanitized['ListaProductosBodega'] = [];
+        }
 
         // Images
         if (isset($product_data['Imagenes']) && is_array($product_data['Imagenes']) && !empty($product_data['Imagenes'])) {
@@ -483,6 +510,89 @@ class ShopCommerce_Helpers
         }
 
         return $sanitized;
+    }
+
+    /**
+     * Get ShopCommerce PartNum from product
+     *
+     * @param int|WC_Product $product Product ID or product object
+     * @return string PartNum value
+     */
+    public function get_product_part_num($product) {
+        if (is_numeric($product)) {
+            $product = wc_get_product($product);
+        }
+
+        if (!$product) {
+            return '';
+        }
+
+        return $product->get_meta('_shopcommerce_part_num', true);
+    }
+
+    /**
+     * Get ShopCommerce ListaProductosBodega from product
+     *
+     * @param int|WC_Product $product Product ID or product object
+     * @return array Decoded ListaProductosBodega array
+     */
+    public function get_product_lista_productos_bodega($product) {
+        if (is_numeric($product)) {
+            $product = wc_get_product($product);
+        }
+
+        if (!$product) {
+            return [];
+        }
+
+        $bodega_json = $product->get_meta('_shopcommerce_lista_productos_bodega', true);
+        if (empty($bodega_json)) {
+            return [];
+        }
+
+        $bodega_data = json_decode($bodega_json, true);
+        return is_array($bodega_data) ? $bodega_data : [];
+    }
+
+    /**
+     * Get product warehouse stock information
+     *
+     * @param int|WC_Product $product Product ID or product object
+     * @return array Warehouse stock information
+     */
+    public function get_product_warehouse_stock($product) {
+        $bodega_data = $this->get_product_lista_productos_bodega($product);
+        $warehouse_info = [];
+
+        foreach ($bodega_data as $bodega_item) {
+            if (isset($bodega_item['Bodega']) && isset($bodega_item['Stock'])) {
+                $warehouse_info[] = [
+                    'warehouse' => $bodega_item['Bodega'],
+                    'stock' => intval($bodega_item['Stock']),
+                    'location' => $bodega_item['Ubicacion'] ?? '',
+                    'available' => ($bodega_item['Disponible'] ?? true) === true,
+                ];
+            }
+        }
+
+        return $warehouse_info;
+    }
+
+    /**
+     * Get total stock across all warehouses
+     *
+     * @param int|WC_Product $product Product ID or product object
+     * @return int Total stock across all warehouses
+     */
+    public function get_total_warehouse_stock($product) {
+        $warehouse_info = $this->get_product_warehouse_stock($product);
+        $total_stock = 0;
+
+        foreach ($warehouse_info as $warehouse) {
+            $total_stock += $warehouse['stock'];
+        }
+
+        return $total_stock;
     }
 
     /**

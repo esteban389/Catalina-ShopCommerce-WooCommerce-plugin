@@ -41,6 +41,9 @@ class ShopCommerce_Cron {
 
         // Register the main cron action
         add_action(self::HOOK_NAME, [$this, 'execute_sync_hook']);
+
+        // Register custom cron schedules immediately on construction
+        add_filter('cron_schedules', [$this, 'register_cron_schedules']);
     }
 
     /**
@@ -51,9 +54,6 @@ class ShopCommerce_Cron {
 
         // Initialize jobs
         $this->initialize_jobs();
-
-        // Register custom cron schedules
-        add_filter('cron_schedules', [$this, 'register_cron_schedules']);
 
         // Schedule the main sync hook using the centralized method
         $this->schedule_cron_event(self::DEFAULT_INTERVAL);
@@ -82,14 +82,19 @@ class ShopCommerce_Cron {
             $timestamp = time();
         }
 
-        // Check if already scheduled
-        if (wp_next_scheduled(self::HOOK_NAME)) {
-            $this->logger->debug('Cron event already scheduled, skipping', [
+        // Validate the interval
+        $available_schedules = wp_get_schedules();
+        if (!isset($available_schedules[$interval])) {
+            $this->logger->error('Invalid cron interval specified', [
                 'hook' => self::HOOK_NAME,
-                'interval' => $interval
+                'interval' => $interval,
+                'available_intervals' => array_keys($available_schedules)
             ]);
-            return true;
+            return false;
         }
+
+        // Clear any existing schedule first to ensure clean state
+        $this->clear_cron_event();
 
         // Schedule the event
         $scheduled = wp_schedule_event($timestamp, $interval, self::HOOK_NAME);
@@ -98,7 +103,8 @@ class ShopCommerce_Cron {
             $this->logger->error('Failed to schedule cron event', [
                 'hook' => self::HOOK_NAME,
                 'interval' => $interval,
-                'timestamp' => $timestamp
+                'timestamp' => $timestamp,
+                'available_schedules' => array_keys($available_schedules)
             ]);
             return false;
         }
@@ -108,7 +114,8 @@ class ShopCommerce_Cron {
             'hook' => self::HOOK_NAME,
             'interval' => $interval,
             'timestamp' => $timestamp,
-            'next_run' => $next_run ? date('Y-m-d H:i:s', $next_run) : null
+            'next_run' => $next_run ? date('Y-m-d H:i:s', $next_run) : null,
+            'schedule_interval' => $available_schedules[$interval]['interval'] ?? 'unknown'
         ]);
 
         return true;
@@ -416,6 +423,51 @@ class ShopCommerce_Cron {
     }
 
     /**
+     * Force reschedule cron job - aggressive cleanup and rescheduling
+     * Use this when normal rescheduling fails
+     *
+     * @param string $interval New interval (e.g., 'hourly', 'every_minute')
+     * @return bool True if rescheduling was successful
+     */
+    public function force_reschedule($interval) {
+        $this->logger->info('Force rescheduling sync hook', ['interval' => $interval]);
+
+        // Get current state before cleanup
+        $before_debug = $this->debug_cron_system();
+
+        // Aggressive cleanup - clear all instances of our hook
+        $this->clear_cron_event();
+
+        // Double-check and clear again if needed
+        if (wp_next_scheduled(self::HOOK_NAME)) {
+            $this->logger->warning('Cron event still exists after clear, forcing removal');
+            wp_clear_scheduled_hook(self::HOOK_NAME);
+        }
+
+        // Ensure custom schedules are registered
+        add_filter('cron_schedules', [$this, 'register_cron_schedules']);
+
+        // Try to schedule with a small delay to ensure cleanup is complete
+        $scheduled = $this->schedule_cron_event($interval, time() + 5);
+
+        if ($scheduled) {
+            $after_debug = $this->debug_cron_system();
+            $this->logger->info('Force reschedule successful', [
+                'interval' => $interval,
+                'before_events' => count($before_debug['cron_events_for_hook']),
+                'after_events' => count($after_debug['cron_events_for_hook'])
+            ]);
+            return true;
+        }
+
+        $this->logger->error('Force reschedule failed', [
+            'interval' => $interval,
+            'debug_info' => $this->debug_cron_system()
+        ]);
+        return false;
+    }
+
+    /**
      * Run sync manually for specific job
      *
      * @param array $job Job to run manually
@@ -466,6 +518,64 @@ class ShopCommerce_Cron {
                 'error' => $e->getMessage()
             ];
         }
+    }
+
+    /**
+     * Debug cron system - returns detailed information about cron state
+     *
+     * @return array Debug information
+     */
+    public function debug_cron_system() {
+        $this->logger->info('Debugging cron system');
+
+        // Get all WordPress cron events
+        $cron = _get_cron_array();
+        $our_cron_events = [];
+
+        foreach ($cron as $timestamp => $hooks) {
+            foreach ($hooks as $hook => $events) {
+                if ($hook === self::HOOK_NAME) {
+                    $our_cron_events[] = [
+                        'timestamp' => $timestamp,
+                        'datetime' => date('Y-m-d H:i:s', $timestamp),
+                        'events' => $events
+                    ];
+                }
+            }
+        }
+
+        // Get available schedules
+        $schedules = wp_get_schedules();
+        $custom_schedules = [];
+        foreach ($schedules as $key => $schedule) {
+            if (!in_array($key, ['hourly', 'twicedaily', 'daily'])) {
+                $custom_schedules[$key] = $schedule;
+            }
+        }
+
+        // Check if our hook is registered as an action
+        $global_actions = $GLOBALS['wp_filter'][self::HOOK_NAME] ?? null;
+        $hook_registered = !empty($global_actions);
+
+        return [
+            'hook_name' => self::HOOK_NAME,
+            'hook_registered_as_action' => $hook_registered,
+            'cron_events_for_hook' => $our_cron_events,
+            'next_scheduled' => wp_next_scheduled(self::HOOK_NAME),
+            'available_schedules' => array_keys($schedules),
+            'custom_schedules' => $custom_schedules,
+            'plugin_active' => is_plugin_active(plugin_basename($this->get_plugin_file())),
+            'wp_cron_enabled' => defined('DISABLE_WP_CRON') && !DISABLE_WP_CRON,
+        ];
+    }
+
+    /**
+     * Get plugin file path
+     *
+     * @return string Plugin file path
+     */
+    private function get_plugin_file() {
+        return dirname(dirname(__FILE__)) . '/index.php';
     }
 
     /**

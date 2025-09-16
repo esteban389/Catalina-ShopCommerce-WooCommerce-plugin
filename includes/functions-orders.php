@@ -14,6 +14,43 @@ if (!defined('ABSPATH')) {
 }
 
 /**
+ * Get ShopCommerce metadata from a product
+ *
+ * @param int|WC_Product $product Product ID or product object
+ * @return array ShopCommerce metadata
+ */
+function shopcommerce_get_product_shopcommerce_metadata($product) {
+    if (is_numeric($product)) {
+        $product = wc_get_product($product);
+    }
+
+    if (!$product) {
+        return [];
+    }
+
+    $metadata = [
+        'part_num' => $product->get_meta('_shopcommerce_part_num', true),
+        'marks' => $product->get_meta('_shopcommerce_marca', true),
+        'lista_productos_bodega_json' => $product->get_meta('_shopcommerce_lista_productos_bodega', true),
+        'xml_attributes' => $product->get_meta('_shopcommerce_xml_attributes', true),
+        'external_provider' => $product->get_meta('_external_provider', true),
+        'external_provider_brand' => $product->get_meta('_external_provider_brand', true),
+        'sync_date' => $product->get_meta('_external_provider_sync_date', true),
+        'shopcommerce_sku' => $product->get_meta('_shopcommerce_sku', true),
+    ];
+
+    // Decode JSON fields
+    if (!empty($metadata['lista_productos_bodega_json'])) {
+        $bodega_data = json_decode($metadata['lista_productos_bodega_json'], true);
+        $metadata['lista_productos_bodega'] = is_array($bodega_data) ? $bodega_data : [];
+    } else {
+        $metadata['lista_productos_bodega'] = [];
+    }
+
+    return $metadata;
+}
+
+/**
  * Get external provider products from an order
  *
  * @param int|WC_Order $order Order ID or order object
@@ -44,8 +81,8 @@ function shopcommerce_get_external_provider_products_from_order($order) {
         $external_provider = get_post_meta($product_id, '_external_provider', true);
 
         if ($external_provider === 'shopcommerce') {
-            $external_provider_brand = get_post_meta($product_id, '_external_provider_brand', true);
-            $external_provider_sync_date = get_post_meta($product_id, '_external_provider_sync_date', true);
+            // Get comprehensive ShopCommerce metadata
+            $shopcommerce_metadata = shopcommerce_get_product_shopcommerce_metadata($product);
 
             $product_data = [
                 'item_id' => $item_id,
@@ -56,8 +93,13 @@ function shopcommerce_get_external_provider_products_from_order($order) {
                 'line_total' => $item->get_total(),
                 'line_tax' => $item->get_total_tax(),
                 'external_provider' => $external_provider,
-                'external_provider_brand' => $external_provider_brand,
-                'external_provider_sync_date' => $external_provider_sync_date,
+                'external_provider_brand' => $shopcommerce_metadata['external_provider_brand'],
+                'external_provider_sync_date' => $shopcommerce_metadata['sync_date'],
+                'shopcommerce_sku' => $shopcommerce_metadata['shopcommerce_sku'],
+                'part_num' => $shopcommerce_metadata['part_num'],
+                'marks' => $shopcommerce_metadata['marks'],
+                'lista_productos_bodega' => $shopcommerce_metadata['lista_productos_bodega'],
+                'xml_attributes' => $shopcommerce_metadata['xml_attributes'],
             ];
 
             $external_provider_products[] = $product_data;
@@ -65,6 +107,54 @@ function shopcommerce_get_external_provider_products_from_order($order) {
     }
 
     return $external_provider_products;
+}
+
+/**
+ * Get warehouse information for order products
+ *
+ * @param int|WC_Order $order Order ID or order object
+ * @return array Warehouse information for products in the order
+ */
+function shopcommerce_get_order_warehouse_info($order) {
+    if (is_numeric($order)) {
+        $order = wc_get_order($order);
+    }
+
+    if (!$order) {
+        return [];
+    }
+
+    $external_products = shopcommerce_get_external_provider_products_from_order($order);
+    $warehouse_info = [];
+
+    foreach ($external_products as $product) {
+        if (!empty($product['lista_productos_bodega'])) {
+            $product_warehouse_info = [
+                'product_id' => $product['product_id'],
+                'product_name' => $product['product_name'],
+                'product_sku' => $product['product_sku'],
+                'part_num' => $product['part_num'],
+                'quantity_ordered' => $product['quantity'],
+                'warehouses' => [],
+            ];
+
+            foreach ($product['lista_productos_bodega'] as $bodega) {
+                if (isset($bodega['Bodega']) && isset($bodega['Stock'])) {
+                    $product_warehouse_info['warehouses'][] = [
+                        'warehouse' => $bodega['Bodega'],
+                        'stock' => intval($bodega['Stock']),
+                        'location' => $bodega['Ubicacion'] ?? '',
+                        'available' => ($bodega['Disponible'] ?? true) === true,
+                        'can_fulfill' => intval($bodega['Stock']) >= $product['quantity'],
+                    ];
+                }
+            }
+
+            $warehouse_info[] = $product_warehouse_info;
+        }
+    }
+
+    return $warehouse_info;
 }
 
 /**
@@ -76,6 +166,140 @@ function shopcommerce_get_external_provider_products_from_order($order) {
 function shopcommerce_order_has_external_provider_products($order) {
     $external_products = shopcommerce_get_external_provider_products_from_order($order);
     return !empty($external_products);
+}
+
+/**
+ * Get comprehensive shipping information from an order
+ *
+ * @param int|WC_Order $order Order ID or order object
+ * @return array Complete shipping information
+ */
+function shopcommerce_get_order_shipping_info($order) {
+    // Get order object if ID was passed
+    if (is_numeric($order)) {
+        $order = wc_get_order($order);
+    }
+
+    if (!$order) {
+        return [];
+    }
+
+    $shipping_info = [
+        'shipping_method' => $order->get_shipping_method(),
+        'shipping_method_title' => $order->get_shipping_method_title(),
+        'shipping_total' => $order->get_shipping_total(),
+        'shipping_tax' => $order->get_shipping_tax(),
+        'formatted_shipping_total' => $order->get_formatted_shipping_total(),
+    ];
+
+    // Get shipping address
+    $shipping_address = $order->get_address('shipping');
+    if (!empty($shipping_address)) {
+        $shipping_info['shipping_address'] = [
+            'first_name' => $shipping_address['first_name'] ?? '',
+            'last_name' => $shipping_address['last_name'] ?? '',
+            'company' => $shipping_address['company'] ?? '',
+            'address_1' => $shipping_address['address_1'] ?? '',
+            'address_2' => $shipping_address['address_2'] ?? '',
+            'city' => $shipping_address['city'] ?? '',
+            'state' => $shipping_address['state'] ?? '',
+            'postcode' => $shipping_address['postcode'] ?? '',
+            'country' => $shipping_address['country'] ?? '',
+            'phone' => $shipping_address['phone'] ?? '',
+            'formatted_address' => $order->get_formatted_shipping_address(),
+        ];
+    }
+
+    // Get billing address as fallback for shipping
+    if (empty($shipping_info['shipping_address'])) {
+        $billing_address = $order->get_address('billing');
+        if (!empty($billing_address)) {
+            $shipping_info['billing_address_used_for_shipping'] = true;
+            $shipping_info['shipping_address'] = [
+                'first_name' => $billing_address['first_name'] ?? '',
+                'last_name' => $billing_address['last_name'] ?? '',
+                'company' => $billing_address['company'] ?? '',
+                'address_1' => $billing_address['address_1'] ?? '',
+                'address_2' => $billing_address['address_2'] ?? '',
+                'city' => $billing_address['city'] ?? '',
+                'state' => $billing_address['state'] ?? '',
+                'postcode' => $billing_address['postcode'] ?? '',
+                'country' => $billing_address['country'] ?? '',
+                'phone' => $billing_address['phone'] ?? '',
+                'formatted_address' => $order->get_formatted_billing_address(),
+            ];
+        }
+    }
+
+    return $shipping_info;
+}
+
+/**
+ * Get comprehensive client information from an order
+ *
+ * @param int|WC_Order $order Order ID or order object
+ * @return array Complete client information
+ */
+function shopcommerce_get_order_client_info($order) {
+    // Get order object if ID was passed
+    if (is_numeric($order)) {
+        $order = wc_get_order($order);
+    }
+
+    if (!$order) {
+        return [];
+    }
+
+    $client_info = [
+        'customer_id' => $order->get_customer_id(),
+        'user_id' => $order->get_user_id(),
+        'customer_ip_address' => $order->get_customer_ip_address(),
+        'customer_user_agent' => $order->get_customer_user_agent(),
+        'customer_note' => $order->get_customer_note(),
+        'payment_method' => $order->get_payment_method(),
+        'payment_method_title' => $order->get_payment_method_title(),
+        'transaction_id' => $order->get_transaction_id(),
+        'date_created' => $order->get_date_created() ? $order->get_date_created()->format('Y-m-d H:i:s') : null,
+        'date_completed' => $order->get_date_completed() ? $order->get_date_completed()->format('Y-m-d H:i:s') : null,
+    ];
+
+    // Get billing information
+    $billing_address = $order->get_address('billing');
+    if (!empty($billing_address)) {
+        $client_info['billing_address'] = [
+            'first_name' => $billing_address['first_name'] ?? '',
+            'last_name' => $billing_address['last_name'] ?? '',
+            'company' => $billing_address['company'] ?? '',
+            'address_1' => $billing_address['address_1'] ?? '',
+            'address_2' => $billing_address['address_2'] ?? '',
+            'city' => $billing_address['city'] ?? '',
+            'state' => $billing_address['state'] ?? '',
+            'postcode' => $billing_address['postcode'] ?? '',
+            'country' => $billing_address['country'] ?? '',
+            'email' => $billing_address['email'] ?? '',
+            'phone' => $billing_address['phone'] ?? '',
+            'formatted_address' => $order->get_formatted_billing_address(),
+        ];
+    }
+
+    // Get customer object for additional details
+    if ($order->get_customer_id()) {
+        $customer = new WC_Customer($order->get_customer_id());
+        $client_info['customer_details'] = [
+            'username' => $customer->get_username(),
+            'email' => $customer->get_email(),
+            'first_name' => $customer->get_first_name(),
+            'last_name' => $customer->get_last_name(),
+            'display_name' => $customer->get_display_name(),
+            'role' => $customer->get_role(),
+            'is_paying_customer' => $customer->is_paying_customer(),
+            'date_registered' => $customer->get_date_registered() ? $customer->get_date_registered()->format('Y-m-d H:i:s') : null,
+            'order_count' => $customer->get_order_count(),
+            'total_spent' => $customer->get_total_spent(),
+        ];
+    }
+
+    return $client_info;
 }
 
 /**
@@ -99,6 +323,7 @@ function shopcommerce_get_order_external_provider_stats($order) {
     }
 
     $brands = array_unique(array_column($external_products, 'external_provider_brand'));
+    $part_nums = array_filter(array_column($external_products, 'part_num'));
     $product_summary = [];
 
     foreach ($external_products as $product) {
@@ -108,11 +333,26 @@ function shopcommerce_get_order_external_provider_stats($order) {
                 'count' => 0,
                 'quantity' => 0,
                 'value' => 0,
+                'part_nums' => [],
+                'has_warehouse_info' => false,
             ];
         }
         $product_summary[$brand]['count']++;
         $product_summary[$brand]['quantity'] += $product['quantity'];
         $product_summary[$brand]['value'] += $product['line_total'];
+
+        if (!empty($product['part_num'])) {
+            $product_summary[$brand]['part_nums'][] = $product['part_num'];
+        }
+
+        if (!empty($product['lista_productos_bodega'])) {
+            $product_summary[$brand]['has_warehouse_info'] = true;
+        }
+    }
+
+    // Remove duplicate part numbers
+    foreach ($product_summary as &$brand_data) {
+        $brand_data['part_nums'] = array_unique($brand_data['part_nums']);
     }
 
     return [
@@ -121,6 +361,8 @@ function shopcommerce_get_order_external_provider_stats($order) {
         'total_quantity' => array_sum(array_column($external_products, 'quantity')),
         'total_value' => array_sum(array_column($external_products, 'line_total')),
         'brands' => $brands,
+        'part_nums' => $part_nums,
+        'has_warehouse_info' => !empty(array_filter(array_column($external_products, 'lista_productos_bodega'))),
         'product_summary' => $product_summary,
     ];
 }
@@ -171,28 +413,104 @@ function shopcommerce_log_order_external_products($order, $logger = null) {
         'external_provider_products' => $external_products,
     ];
 
+    // Collect comprehensive order data
+    $order_data = [
+        'order_id' => $order->get_id(),
+        'order_number' => $order->get_order_number(),
+        'order_total' => $order->get_total(),
+        'order_subtotal' => $order->get_subtotal(),
+        'order_discount_total' => $order->get_discount_total(),
+        'order_tax_total' => $order->get_total_tax(),
+        'order_shipping_total' => $order->get_shipping_total(),
+        'formatted_order_total' => $order->get_formatted_order_total(),
+        'order_status' => $order->get_status(),
+        'order_currency' => $order->get_currency(),
+        'payment_method' => $order->get_payment_method(),
+        'payment_method_title' => $order->get_payment_method_title(),
+        'transaction_id' => $order->get_transaction_id(),
+        'customer_ip_address' => $order->get_customer_ip_address(),
+        'customer_user_agent' => $order->get_customer_user_agent(),
+        'customer_note' => $order->get_customer_note(),
+        'date_created' => $order->get_date_created() ? $order->get_date_created()->format('Y-m-d H:i:s') : null,
+        'date_completed' => $order->get_date_completed() ? $order->get_date_completed()->format('Y-m-d H:i:s') : null,
+    ];
+
+    // Add shipping information
+    $shipping_info = shopcommerce_get_order_shipping_info($order);
+    $order_data['shipping_info'] = $shipping_info;
+
+    // Add client information
+    $client_info = shopcommerce_get_order_client_info($order);
+    $order_data['client_info'] = $client_info;
+
+    // Add external provider products
+    $order_data['external_provider_products'] = $external_products;
+
+    // Calculate external provider products statistics
+    $external_stats = shopcommerce_get_order_external_provider_stats($order);
+    $order_data['external_provider_stats'] = $external_stats;
+
+    // Prepare comprehensive log message
+    $log_message = sprintf(
+        'Order %d completed with %d external provider product(s) from %d brand(s) - Total value: $%.2f',
+        $order->get_id(),
+        $external_stats['total_products'],
+        count($external_stats['brands']),
+        $external_stats['total_value']
+    );
+
+    // Prepare log context with complete data
+    $log_context = $order_data;
+
     // Log to logger if available
     if ($logger) {
         $logger->info($log_message, $log_context);
 
-        // Additional activity logging
-        $stats = shopcommerce_get_order_external_provider_stats($order);
+        // Additional detailed activity logging
         $logger->log_activity(
-            'order_completed_with_external_products',
+            'order_completed_with_external_products_detailed',
             sprintf(
-                'Order %s completed with %d external provider products from %d brand(s)',
+                'Order %s completed with comprehensive data: %d external provider products from %d brand(s), total value $%.2f, shipped to %s, %s',
                 $order->get_order_number(),
-                $stats['total_products'],
-                count($stats['brands'])
+                $external_stats['total_products'],
+                count($external_stats['brands']),
+                $external_stats['total_value'],
+                !empty($shipping_info['shipping_address']) ?
+                    ($shipping_info['shipping_address']['city'] . ', ' . $shipping_info['shipping_address']['state']) :
+                    'no shipping address',
+                !empty($client_info['billing_address']) ?
+                    ($client_info['billing_address']['first_name'] . ' ' . $client_info['billing_address']['last_name']) :
+                    'guest customer'
             ),
             [
                 'order_id' => $order->get_id(),
-                'product_count' => $stats['total_products'],
-                'brands' => $stats['brands'],
-                'total_value' => $stats['total_value'],
-                'total_quantity' => $stats['total_quantity'],
+                'order_number' => $order->get_order_number(),
+                'product_count' => $external_stats['total_products'],
+                'brands' => $external_stats['brands'],
+                'total_value' => $external_stats['total_value'],
+                'total_quantity' => $external_stats['total_quantity'],
+                'shipping_city' => $shipping_info['shipping_address']['city'] ?? null,
+                'shipping_state' => $shipping_info['shipping_address']['state'] ?? null,
+                'customer_name' => $client_info['billing_address']['first_name'] . ' ' . $client_info['billing_address']['last_name'] ?? 'Guest',
+                'customer_email' => $client_info['billing_address']['email'] ?? '',
+                'has_shipping_address' => !empty($shipping_info['shipping_address']),
+                'has_billing_address' => !empty($client_info['billing_address']),
             ]
         );
+
+        // Add comprehensive metadata to order
+        $order->add_meta_data('_shopcommerce_shipping_info', json_encode($shipping_info), true);
+        $order->add_meta_data('_shopcommerce_client_info', json_encode($client_info), true);
+        $order->add_meta_data('_shopcommerce_products_detailed', json_encode($external_products), true);
+        $order->add_meta_data('_shopcommerce_data_collection_date', current_time('mysql'), true);
+        $order->save();
+
+        if ($logger) {
+            $logger->debug('Added comprehensive ShopCommerce metadata to order', [
+                'order_id' => $order->get_id(),
+                'metadata_added' => ['shipping_info', 'client_info', 'products_detailed', 'data_collection_date']
+            ]);
+        }
 
         return true;
     }
@@ -662,6 +980,292 @@ function shopcommerce_update_existing_orders_metadata($args = []) {
 
     return $results;
 }
+
+/**
+ * Add custom shipping fields to WooCommerce checkout
+ *
+ * This function hooks into WooCommerce checkout fields to add required fields:
+ * - phoneNumber (phone number for shipping)
+ * - stateId (state ID for shipping)
+ * - countyId (county ID for shipping)
+ *
+ * @param array $fields Default checkout fields
+ * @return array Modified checkout fields with custom shipping fields
+ */
+function shopcommerce_add_custom_shipping_fields($fields) {
+    // Add custom shipping fields
+    $fields['shipping']['shipping_phone_number'] = [
+        'label'        => __('Phone Number', 'shopcommerce-product-sync-plugin'),
+        'placeholder'  => __('Enter phone number', 'shopcommerce-product-sync-plugin'),
+        'required'     => true,
+        'class'        => ['form-row-wide'],
+        'priority'     => 25,
+        'clear'        => true,
+    ];
+
+    $fields['shipping']['shipping_state_id'] = [
+        'label'        => __('State ID', 'shopcommerce-product-sync-plugin'),
+        'placeholder'  => __('Enter state ID', 'shopcommerce-product-sync-plugin'),
+        'required'     => true,
+        'class'        => ['form-row-wide'],
+        'priority'     => 30,
+        'clear'        => true,
+    ];
+
+    $fields['shipping']['shipping_county_id'] = [
+        'label'        => __('County ID', 'shopcommerce-product-sync-plugin'),
+        'placeholder'  => __('Enter county ID', 'shopcommerce-product-sync-plugin'),
+        'required'     => true,
+        'class'        => ['form-row-wide'],
+        'priority'     => 35,
+        'clear'        => true,
+    ];
+
+    return $fields;
+}
+
+/**
+ * Validate custom shipping fields during checkout
+ *
+ * This function validates the custom shipping fields when checkout is processed
+ */
+function shopcommerce_validate_custom_shipping_fields() {
+    // Check if shipping phone number is required and empty
+    if (isset($_POST['shipping_phone_number']) && empty($_POST['shipping_phone_number'])) {
+        wc_add_notice(__('Phone number is a required shipping field.', 'shopcommerce-product-sync-plugin'), 'error');
+    }
+
+    // Check if shipping state ID is required and empty
+    if (isset($_POST['shipping_state_id']) && empty($_POST['shipping_state_id'])) {
+        wc_add_notice(__('State ID is a required shipping field.', 'shopcommerce-product-sync-plugin'), 'error');
+    }
+
+    // Check if shipping county ID is required and empty
+    if (isset($_POST['shipping_county_id']) && empty($_POST['shipping_county_id'])) {
+        wc_add_notice(__('County ID is a required shipping field.', 'shopcommerce-product-sync-plugin'), 'error');
+    }
+}
+
+/**
+ * Save custom shipping fields to order meta
+ *
+ * This function saves the custom shipping field values when an order is created
+ *
+ * @param int $order_id Order ID
+ */
+function shopcommerce_save_custom_shipping_fields($order_id) {
+    if (!empty($_POST['shipping_phone_number'])) {
+        update_post_meta($order_id, '_shipping_phone_number', sanitize_text_field($_POST['shipping_phone_number']));
+    }
+
+    if (!empty($_POST['shipping_state_id'])) {
+        update_post_meta($order_id, '_shipping_state_id', sanitize_text_field($_POST['shipping_state_id']));
+    }
+
+    if (!empty($_POST['shipping_county_id'])) {
+        update_post_meta($order_id, '_shipping_county_id', sanitize_text_field($_POST['shipping_county_id']));
+    }
+}
+
+/**
+ * Display custom shipping fields in order admin
+ *
+ * This function displays the custom shipping field values in the WordPress admin order page
+ *
+ * @param WC_Order $order Order object
+ */
+function shopcommerce_display_custom_shipping_fields_admin($order) {
+    $phone_number = $order->get_meta('_shipping_phone_number');
+    $state_id = $order->get_meta('_shipping_state_id');
+    $county_id = $order->get_meta('_shipping_county_id');
+
+    if (!empty($phone_number) || !empty($state_id) || !empty($county_id)) {
+        echo '<div class="address">';
+        echo '<p><strong>' . __('Additional Shipping Information', 'shopcommerce-product-sync-plugin') . ':</strong></p>';
+
+        if (!empty($phone_number)) {
+            echo '<p>' . __('Phone Number:', 'shopcommerce-product-sync-plugin') . ' ' . esc_html($phone_number) . '</p>';
+        }
+
+        if (!empty($state_id)) {
+            echo '<p>' . __('State ID:', 'shopcommerce-product-sync-plugin') . ' ' . esc_html($state_id) . '</p>';
+        }
+
+        if (!empty($county_id)) {
+            echo '<p>' . __('County ID:', 'shopcommerce-product-sync-plugin') . ' ' . esc_html($county_id) . '</p>';
+        }
+
+        echo '</div>';
+    }
+}
+
+/**
+ * Display custom shipping fields in customer order details
+ *
+ * This function displays the custom shipping field values in customer-facing order pages
+ *
+ * @param WC_Order $order Order object
+ */
+function shopcommerce_display_custom_shipping_fields_customer($order) {
+    $phone_number = $order->get_meta('_shipping_phone_number');
+    $state_id = $order->get_meta('_shipping_state_id');
+    $county_id = $order->get_meta('_shipping_county_id');
+
+    if (!empty($phone_number) || !empty($state_id) || !empty($county_id)) {
+        echo '<h3>' . __('Additional Shipping Information', 'shopcommerce-product-sync-plugin') . '</h3>';
+        echo '<ul class="woocommerce-order-overview__additional-info">';
+
+        if (!empty($phone_number)) {
+            echo '<li class="woocommerce-order-overview__additional-info-phone">';
+            echo '<span class="woocommerce-order-overview__additional-info-label">' . __('Phone Number:', 'shopcommerce-product-sync-plugin') . '</span> ';
+            echo '<span class="woocommerce-order-overview__additional-info-value">' . esc_html($phone_number) . '</span>';
+            echo '</li>';
+        }
+
+        if (!empty($state_id)) {
+            echo '<li class="woocommerce-order-overview__additional-info-state">';
+            echo '<span class="woocommerce-order-overview__additional-info-label">' . __('State ID:', 'shopcommerce-product-sync-plugin') . '</span> ';
+            echo '<span class="woocommerce-order-overview__additional-info-value">' . esc_html($state_id) . '</span>';
+            echo '</li>';
+        }
+
+        if (!empty($county_id)) {
+            echo '<li class="woocommerce-order-overview__additional-info-county">';
+            echo '<span class="woocommerce-order-overview__additional-info-label">' . __('County ID:', 'shopcommerce-product-sync-plugin') . '</span> ';
+            echo '<span class="woocommerce-order-overview__additional-info-value">' . esc_html($county_id) . '</span>';
+            echo '</li>';
+        }
+
+        echo '</ul>';
+    }
+}
+
+/**
+ * Include custom shipping fields in order emails
+ *
+ * This function adds the custom shipping fields to WooCommerce order emails
+ *
+ * @param array $fields Existing email fields
+ * @param bool $sent_to_admin Whether the email is sent to admin
+ * @param WC_Order $order Order object
+ * @return array Modified email fields
+ */
+function shopcommerce_include_custom_shipping_fields_in_emails($fields, $sent_to_admin, $order) {
+    $phone_number = $order->get_meta('_shipping_phone_number');
+    $state_id = $order->get_meta('_shipping_state_id');
+    $county_id = $order->get_meta('_shipping_county_id');
+
+    $additional_fields = [];
+
+    if (!empty($phone_number)) {
+        $additional_fields['shipping_phone_number'] = [
+            'label' => __('Phone Number', 'shopcommerce-product-sync-plugin'),
+            'value' => $phone_number,
+        ];
+    }
+
+    if (!empty($state_id)) {
+        $additional_fields['shipping_state_id'] = [
+            'label' => __('State ID', 'shopcommerce-product-sync-plugin'),
+            'value' => $state_id,
+        ];
+    }
+
+    if (!empty($county_id)) {
+        $additional_fields['shipping_county_id'] = [
+            'label' => __('County ID', 'shopcommerce-product-sync-plugin'),
+            'value' => $county_id,
+        ];
+    }
+
+    // Add our fields after existing shipping fields
+    if (!empty($additional_fields)) {
+        $new_fields = [];
+        foreach ($fields as $key => $field) {
+            $new_fields[$key] = $field;
+            if ($key === 'shipping_address') {
+                $new_fields['additional_shipping_info'] = [
+                    'label' => __('Additional Shipping Information', 'shopcommerce-product-sync-plugin'),
+                    'value' => '',
+                    'fields' => $additional_fields,
+                ];
+            }
+        }
+        $fields = $new_fields;
+    }
+
+    return $fields;
+}
+
+/**
+ * Initialize custom shipping fields functionality
+ */
+function shopcommerce_init_custom_shipping_fields() {
+    // Add custom fields to checkout
+    add_filter('woocommerce_checkout_fields', 'shopcommerce_add_custom_shipping_fields');
+
+    // Validate custom fields during checkout
+    add_action('woocommerce_checkout_process', 'shopcommerce_validate_custom_shipping_fields');
+
+    // Save custom fields to order meta
+    add_action('woocommerce_checkout_update_order_meta', 'shopcommerce_save_custom_shipping_fields');
+
+    // Display custom fields in admin order page
+    add_action('woocommerce_admin_order_data_after_shipping_address', 'shopcommerce_display_custom_shipping_fields_admin', 10, 1);
+
+    // Display custom fields in customer order pages
+    add_action('woocommerce_order_details_after_customer_details', 'shopcommerce_display_custom_shipping_fields_customer', 10, 1);
+
+    // Include custom fields in emails
+    add_filter('woocommerce_email_order_meta_fields', 'shopcommerce_include_custom_shipping_fields_in_emails', 10, 3);
+}
+
+// Initialize the custom shipping fields functionality
+add_action('woocommerce_init', 'shopcommerce_init_custom_shipping_fields');
+
+/**
+ * Add custom CSS for additional shipping info display
+ */
+function shopcommerce_custom_shipping_fields_css() {
+    ?>
+    <style>
+        .woocommerce-order-overview__additional-info {
+            list-style: none;
+            padding: 0;
+            margin: 1em 0;
+        }
+
+        .woocommerce-order-overview__additional-info li {
+            margin-bottom: 0.5em;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .woocommerce-order-overview__additional-info-label {
+            font-weight: 600;
+            margin-right: 1em;
+        }
+
+        .woocommerce-order-overview__additional-info-value {
+            text-align: right;
+        }
+
+        @media (max-width: 768px) {
+            .woocommerce-order-overview__additional-info li {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+
+            .woocommerce-order-overview__additional-info-value {
+                text-align: left;
+                margin-top: 0.25em;
+            }
+        }
+    </style>
+    <?php
+}
+add_action('wp_head', 'shopcommerce_custom_shipping_fields_css');
 
 /**
  * Test function to manually trigger order processing

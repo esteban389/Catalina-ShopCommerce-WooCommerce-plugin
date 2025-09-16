@@ -432,8 +432,17 @@ class ShopCommerce_Product {
             $mapped_data['meta_data']['_shopcommerce_marca'] = $product_data['Marks'];
         }
 
+        if (!empty($product_data['PartNum'])) {
+            $mapped_data['meta_data']['_shopcommerce_part_num'] = $product_data['PartNum'];
+        }
+
         if (!empty($product_data['Categoria'])) {
             $mapped_data['meta_data']['_shopcommerce_categoria'] = $product_data['Categoria'];
+        }
+
+        // Store ListaProductosBodega as JSON in metadata
+        if (!empty($product_data['ListaProductosBodega']) && is_array($product_data['ListaProductosBodega'])) {
+            $mapped_data['meta_data']['_shopcommerce_lista_productos_bodega'] = json_encode($product_data['ListaProductosBodega']);
         }
 
         // Store raw XML attributes JSON for future reference

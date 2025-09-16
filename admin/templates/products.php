@@ -242,6 +242,9 @@ $brands = $helpers ? $helpers->get_external_provider_brands() : [];
                                         <span class="view">
                                             <a href="<?php echo get_permalink($product['id']); ?>" target="_blank">View</a> |
                                         </span>
+                                        <span class="details">
+                                            <a href="#" class="view-details" data-id="<?php echo $product['id']; ?>">Details</a> |
+                                        </span>
                                         <?php if ($product['status'] !== 'trash'): ?>
                                             <span class="trash">
                                                 <a href="#" class="trash-product" data-id="<?php echo $product['id']; ?>">Trash</a>
@@ -387,6 +390,28 @@ $brands = $helpers ? $helpers->get_external_provider_brands() : [];
             <div class="modal-actions">
                 <button type="button" class="button button-primary" id="modal-confirm">Confirm</button>
                 <button type="button" class="button" id="modal-cancel">Cancel</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Product Details Modal -->
+<div id="product-details-modal" class="shopcommerce-modal" style="display: none;">
+    <div class="modal-content" style="max-width: 900px; width: 90%;">
+        <div class="modal-header">
+            <h3 id="product-details-title">Product Details</h3>
+            <button type="button" class="close-modal">&times;</button>
+        </div>
+        <div class="modal-body">
+            <div id="product-details-content">
+                <div class="loading-spinner">
+                    <span class="spinner is-active"></span>
+                    <p>Loading product details...</p>
+                </div>
+            </div>
+            <div class="modal-actions">
+                <button type="button" class="button" id="product-details-close">Close</button>
+                <a href="" id="product-details-edit" class="button button-primary" target="_blank">Edit Product</a>
             </div>
         </div>
     </div>
@@ -563,6 +588,55 @@ jQuery(document).ready(function($) {
             });
         }
     });
+
+    // Handle product details modal
+    $('.view-details').on('click', function(e) {
+        e.preventDefault();
+        var productId = $(this).data('id');
+        $('#product-details-title').text('Product Details #' + productId);
+        $('#product-details-edit').attr('href', get_edit_post_link(productId));
+        $('#product-details-modal').show();
+
+        // Load product details via AJAX
+        $.ajax({
+            url: shopcommerce_admin.ajax_url,
+            type: 'POST',
+            data: {
+                action: 'shopcommerce_get_product_details',
+                nonce: shopcommerce_admin.nonce,
+                product_id: productId
+            },
+            success: function(response) {
+                if (response.success) {
+                    $('#product-details-content').html(response.data.html);
+                } else {
+                    $('#product-details-content').html('<div class="notice notice-error"><p>Error loading product details: ' + response.data.error + '</p></div>');
+                }
+            },
+            error: function() {
+                $('#product-details-content').html('<div class="notice notice-error"><p>Network error loading product details.</p></div>');
+            }
+        });
+    });
+
+    // Close product details modal
+    $('#product-details-close, #product-details-modal .close-modal').on('click', function() {
+        $('#product-details-modal').hide();
+        $('#product-details-content').html('<div class="loading-spinner"><span class="spinner is-active"></span><p>Loading product details...</p></div>');
+    });
+
+    // Close modal when clicking outside
+    $('#product-details-modal').on('click', function(e) {
+        if (e.target === this) {
+            $(this).hide();
+            $('#product-details-content').html('<div class="loading-spinner"><span class="spinner is-active"></span><p>Loading product details...</p></div>');
+        }
+    });
+
+    // Helper function to get edit post link (simplified version)
+    function get_edit_post_link(postId) {
+        return '<?php echo admin_url('post.php?action=edit&post='); ?>' + postId;
+    }
 });
 </script>
 
@@ -609,5 +683,80 @@ jQuery(document).ready(function($) {
 .page-size-form select {
     margin-right: 5px;
     min-width: 120px;
+}
+.shopcommerce-modal {
+    position: fixed;
+    z-index: 100000;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0,0,0,0.4);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.shopcommerce-modal .modal-content {
+    background-color: #fff;
+    margin: auto;
+    padding: 0;
+    border: 1px solid #ccc;
+    box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+    border-radius: 4px;
+    max-width: 90%;
+    max-height: 90vh;
+    overflow-y: auto;
+}
+.shopcommerce-modal .modal-header {
+    padding: 16px 20px;
+    border-bottom: 1px solid #eee;
+    background-color: #fcfcfc;
+    border-radius: 4px 4px 0 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+.shopcommerce-modal .modal-header h3 {
+    margin: 0;
+    padding: 0;
+    font-size: 18px;
+    font-weight: 600;
+}
+.shopcommerce-modal .close-modal {
+    background: none;
+    border: none;
+    font-size: 20px;
+    cursor: pointer;
+    color: #666;
+    padding: 0;
+    width: 30px;
+    height: 30px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+}
+.shopcommerce-modal .close-modal:hover {
+    background-color: #f0f0f0;
+    color: #000;
+}
+.shopcommerce-modal .modal-body {
+    padding: 20px;
+}
+.shopcommerce-modal .modal-actions {
+    margin-top: 20px;
+    padding-top: 20px;
+    border-top: 1px solid #eee;
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+}
+.shopcommerce-modal .loading-spinner {
+    text-align: center;
+    padding: 40px 20px;
+}
+.shopcommerce-modal .spinner {
+    display: inline-block;
+    margin-bottom: 10px;
 }
 </style>
