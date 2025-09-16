@@ -56,6 +56,15 @@ function shopcommerce_admin_menu() {
 
     add_submenu_page(
         'shopcommerce-sync',
+        'Logs',
+        'Logs',
+        'manage_options',
+        'shopcommerce-sync-logs',
+        'shopcommerce_logs_page'
+    );
+
+    add_submenu_page(
+        'shopcommerce-sync',
         'Settings',
         'Settings',
         'manage_options',
@@ -184,6 +193,17 @@ function shopcommerce_products_page() {
 }
 
 /**
+ * Logs viewer page
+ */
+function shopcommerce_logs_page() {
+    if (!current_user_can('manage_options')) {
+        wp_die(__('You do not have sufficient permissions to access this page.'));
+    }
+
+    include SHOPCOMMERCE_SYNC_PLUGIN_DIR . 'admin/templates/logs.php';
+}
+
+/**
  * Register AJAX handlers
  */
 function shopcommerce_register_ajax_handlers() {
@@ -207,6 +227,9 @@ function shopcommerce_register_ajax_handlers() {
 
     // Load activity log with pagination
     add_action('wp_ajax_shopcommerce_load_activity_log', 'shopcommerce_ajax_load_activity_log');
+
+    // Clear log file
+    add_action('wp_ajax_shopcommerce_clear_log_file', 'shopcommerce_ajax_clear_log_file');
 
     // Reset jobs
     add_action('wp_ajax_shopcommerce_reset_jobs', 'shopcommerce_ajax_reset_jobs');
@@ -439,6 +462,25 @@ function shopcommerce_ajax_reset_jobs() {
 
     $cron_scheduler->reset_jobs();
     wp_send_json_success(['message' => 'Jobs reset successfully']);
+}
+
+/**
+ * AJAX handler for clearing log file
+ */
+function shopcommerce_ajax_clear_log_file() {
+    check_ajax_referer('shopcommerce_admin_nonce', 'nonce');
+
+    if (!current_user_can('manage_options')) {
+        wp_send_json_error(['message' => 'Insufficient permissions']);
+    }
+
+    $logger = isset($GLOBALS['shopcommerce_logger']) ? $GLOBALS['shopcommerce_logger'] : null;
+    if (!$logger) {
+        wp_send_json_error(['message' => 'Logger not available']);
+    }
+
+    $logger->clear_log_file();
+    wp_send_json_success(['message' => 'Log file cleared successfully']);
 }
 
 /**

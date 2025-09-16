@@ -166,7 +166,25 @@ $brands = $helpers ? $helpers->get_external_provider_brands() : [];
                 <tbody id="the-list">
                     <?php if (empty($products_data)): ?>
                         <tr>
-                            <td colspan="9">No products found.</td>
+                            <td colspan="9">
+                                <?php if ($total_products === 0 && empty($search) && empty($brand) && $product_status === 'all'): ?>
+                                    <div class="notice notice-info inline">
+                                        <p>
+                                            <strong>No ShopCommerce products found.</strong>
+                                        </p>
+                                        <p>
+                                            This appears to be because no products have been synchronized yet. You can:
+                                        </p>
+                                        <ul>
+                                            <li><a href="<?php echo admin_url('admin.php?page=shopcommerce-sync-control'); ?>">Run a manual sync</a> to import products from ShopCommerce</li>
+                                            <li>Check the <a href="<?php echo admin_url('admin.php?page=shopcommerce-sync'); ?>">dashboard</a> for sync status and errors</li>
+                                            <li>Verify your API connection in <a href="<?php echo admin_url('admin.php?page=shopcommerce-sync-settings'); ?>">settings</a></li>
+                                        </ul>
+                                    </div>
+                                <?php else: ?>
+                                    No products found matching your current filters.
+                                <?php endif; ?>
+                            </td>
                         </tr>
                     <?php else: ?>
                         <?php foreach ($products_data as $product): ?>

@@ -486,18 +486,18 @@ class ShopCommerce_Helpers {
             $where_clauses[] = $wpdb->prepare("(p.post_title LIKE %s OR p.post_content LIKE %s)", $search_like, $search_like);
         }
 
-        // Brand filter
-        if (!empty($args['brand'])) {
-            $join_clauses[] = "INNER JOIN {$wpdb->postmeta} pm2 ON p.ID = pm2.post_id";
-            $where_clauses[] = $wpdb->prepare("pm2.meta_key = '_external_provider_brand' AND pm2.meta_value = %s", $args['brand']);
-        }
-
         // Join with postmeta for additional product data
+        $join_clauses[] = "LEFT JOIN {$wpdb->postmeta} pm2 ON p.ID = pm2.post_id AND pm2.meta_key = '_external_provider_brand'";
         $join_clauses[] = "LEFT JOIN {$wpdb->postmeta} pm3 ON p.ID = pm3.post_id AND pm3.meta_key = '_shopcommerce_sku'";
         $join_clauses[] = "LEFT JOIN {$wpdb->postmeta} pm4 ON p.ID = pm4.post_id AND pm4.meta_key = '_external_provider_sync_date'";
         $join_clauses[] = "LEFT JOIN {$wpdb->postmeta} pm5 ON p.ID = pm5.post_id AND pm5.meta_key = '_price'";
         $join_clauses[] = "LEFT JOIN {$wpdb->postmeta} pm6 ON p.ID = pm6.post_id AND pm6.meta_key = '_stock'";
         $join_clauses[] = "LEFT JOIN {$wpdb->postmeta} pm7 ON p.ID = pm7.post_id AND pm7.meta_key = '_stock_status'";
+
+        // Brand filter
+        if (!empty($args['brand'])) {
+            $where_clauses[] = $wpdb->prepare("pm2.meta_value = %s", $args['brand']);
+        }
 
         // Build query
         $where_sql = 'WHERE ' . implode(' AND ', $where_clauses);
@@ -527,7 +527,11 @@ class ShopCommerce_Helpers {
                  ORDER BY $orderby $order
                  LIMIT %d OFFSET %d";
 
+        $this->logger->debug('Products query SQL', ['sql' => $sql, 'args' => $args]);
+
         $results = $wpdb->get_results($wpdb->prepare($sql, $args['limit'], $args['offset']));
+
+        $this->logger->debug('Products query results', ['count' => count($results), 'results' => $results]);
 
         $products = [];
         foreach ($results as $row) {
@@ -581,10 +585,12 @@ class ShopCommerce_Helpers {
             $where_clauses[] = $wpdb->prepare("(p.post_title LIKE %s OR p.post_content LIKE %s)", $search_like, $search_like);
         }
 
+        // Join with postmeta for brand data (always include for consistency)
+        $join_clauses[] = "LEFT JOIN {$wpdb->postmeta} pm2 ON p.ID = pm2.post_id AND pm2.meta_key = '_external_provider_brand'";
+
         // Brand filter
         if (!empty($args['brand'])) {
-            $join_clauses[] = "INNER JOIN {$wpdb->postmeta} pm2 ON p.ID = pm2.post_id";
-            $where_clauses[] = $wpdb->prepare("pm2.meta_key = '_external_provider_brand' AND pm2.meta_value = %s", $args['brand']);
+            $where_clauses[] = $wpdb->prepare("pm2.meta_value = %s", $args['brand']);
         }
 
         $where_sql = 'WHERE ' . implode(' AND ', $where_clauses);
@@ -595,7 +601,13 @@ class ShopCommerce_Helpers {
                  $join_sql
                  $where_sql";
 
-        return intval($wpdb->get_var($sql));
+        $this->logger->debug('Products count query SQL', ['sql' => $sql]);
+
+        $count = intval($wpdb->get_var($sql));
+
+        $this->logger->debug('Products count query result', ['count' => $count]);
+
+        return $count;
     }
 
     /**
