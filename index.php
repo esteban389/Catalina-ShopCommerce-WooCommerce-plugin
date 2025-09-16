@@ -36,6 +36,9 @@ require_once SHOPCOMMERCE_SYNC_INCLUDES_DIR . 'class-shopcommerce-config.php';
 // Include admin functions
 require_once SHOPCOMMERCE_SYNC_INCLUDES_DIR . 'functions-admin.php';
 
+// Include order functions
+require_once SHOPCOMMERCE_SYNC_INCLUDES_DIR . 'functions-orders.php';
+
 // Initialize the plugin
 function shopcommerce_sync_init()
 {
@@ -90,6 +93,15 @@ function shopcommerce_sync_activate()
         $cron_scheduler->activate();
     }
 }
+
+// Hook into WooCommerce order completion
+add_action('woocommerce_order_status_completed', 'shopcommerce_handle_order_completion');
+
+// Also hook into order processing (for partial fulfillment tracking)
+add_action('woocommerce_order_status_processing', 'shopcommerce_handle_order_completion');
+
+// Hook into order creation for tracking
+add_action('woocommerce_new_order', 'shopcommerce_handle_order_creation');
 
 // Plugin deactivation hook
 register_deactivation_hook(__FILE__, 'shopcommerce_sync_deactivate');

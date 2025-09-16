@@ -16,12 +16,18 @@ $search = isset($_GET['s']) ? sanitize_text_field($_GET['s']) : '';
 $product_status = isset($_GET['status']) ? sanitize_text_field($_GET['status']) : 'all';
 $brand = isset($_GET['brand']) ? sanitize_text_field($_GET['brand']) : '';
 
+// Get page size from URL or user preference
+$default_page_sizes = [10, 20, 50, 100, 200, 500, 1000];
+$products_per_page = isset($_GET['per_page']) ? intval($_GET['per_page']) : 20;
+
+// Validate page size
+if (!in_array($products_per_page, $default_page_sizes)) {
+    $products_per_page = 20;
+}
+
 // Get helpers
 $helpers = isset($GLOBALS['shopcommerce_helpers']) ? $GLOBALS['shopcommerce_helpers'] : null;
 $logger = isset($GLOBALS['shopcommerce_logger']) ? $GLOBALS['shopcommerce_logger'] : null;
-
-// Get products
-$products_per_page = 20;
 $offset = ($current_page - 1) * $products_per_page;
 
 $products_data = $helpers ? $helpers->get_external_provider_products([
@@ -91,6 +97,25 @@ $brands = $helpers ? $helpers->get_external_provider_brands() : [];
             </form>
         </div>
 
+        <div class="alignleft actions">
+            <form method="get" action="" class="page-size-form">
+                <input type="hidden" name="page" value="shopcommerce-sync-products">
+                <input type="hidden" name="s" value="<?php echo esc_attr($search); ?>">
+                <input type="hidden" name="status" value="<?php echo esc_attr($product_status); ?>">
+                <input type="hidden" name="brand" value="<?php echo esc_attr($brand); ?>">
+                <input type="hidden" name="paged" value="1">
+
+                <label for="per-page" class="screen-reader-text">Items per page:</label>
+                <select id="per-page" name="per_page" class="page-size-select">
+                    <?php foreach ($default_page_sizes as $size): ?>
+                        <option value="<?php echo $size; ?>" <?php selected($products_per_page, $size); ?>>
+                            <?php echo $size; ?> per page
+                        </option>
+                    <?php endforeach; ?>
+                </select>
+            </form>
+        </div>
+
         <div class="tablenav-pages">
             <span class="displaying-num">
                 <?php echo sprintf(
@@ -109,7 +134,8 @@ $brands = $helpers ? $helpers->get_external_provider_brands() : [];
                     'page' => 'shopcommerce-sync-products',
                     's' => $search,
                     'status' => $product_status,
-                    'brand' => $brand
+                    'brand' => $brand,
+                    'per_page' => $products_per_page
                 ];
                 echo paginate_links([
                     'base' => add_query_arg($pagination_args, admin_url('admin.php')),
@@ -438,6 +464,11 @@ jQuery(document).ready(function($) {
     $('#cb-select-all-1, #cb-select-all-2').on('change', function() {
         $('.product-cb').prop('checked', $(this).prop('checked'));
     });
+
+    // Handle page size change
+    $('.page-size-select').on('change', function() {
+        $('.page-size-form').submit();
+    });
 });
 </script>
 
@@ -480,5 +511,9 @@ jQuery(document).ready(function($) {
 }
 .filter-form select {
     margin-right: 5px;
+}
+.page-size-form select {
+    margin-right: 5px;
+    min-width: 120px;
 }
 </style>
