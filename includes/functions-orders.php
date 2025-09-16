@@ -211,24 +211,49 @@ function shopcommerce_log_order_external_products($order, $logger = null) {
  * @param int $order_id The order ID
  */
 function shopcommerce_handle_order_completion($order_id) {
+    // Get logger if available
+    $logger = isset($GLOBALS['shopcommerce_logger']) ? $GLOBALS['shopcommerce_logger'] : null;
+
     // Check if WooCommerce is available
     if (!class_exists('WC_Order')) {
+        if ($logger) {
+            $logger->error('WooCommerce not available for order completion', [
+                'order_id' => $order_id,
+                'function' => 'shopcommerce_handle_order_completion'
+            ]);
+        }
         return;
     }
 
     $order = wc_get_order($order_id);
     if (!$order) {
+        if ($logger) {
+            $logger->error('Order not found for completion processing', [
+                'order_id' => $order_id,
+                'function' => 'shopcommerce_handle_order_completion'
+            ]);
+        }
         return;
+    }
+
+    // Log order completion processing
+    if ($logger) {
+        $logger->info('Processing order completion', [
+            'order_id' => $order_id,
+            'order_number' => $order->get_order_number(),
+            'order_status' => $order->get_status(),
+            'function' => 'shopcommerce_handle_order_completion'
+        ]);
     }
 
     // Check if order has external provider products
     if (shopcommerce_order_has_external_provider_products($order)) {
+        // Get statistics before adding metadata
+        $stats = shopcommerce_get_order_external_provider_stats($order);
+
         // Add metadata to identify order with external provider products
         $order->add_meta_data('_has_shopcommerce_products', 'yes', true);
         $order->add_meta_data('_shopcommerce_order_processed', current_time('mysql'), true);
-
-        // Get statistics and add brand information
-        $stats = shopcommerce_get_order_external_provider_stats($order);
         $order->add_meta_data('_shopcommerce_product_count', $stats['total_products'], true);
         $order->add_meta_data('_shopcommerce_brands', implode(', ', $stats['brands']), true);
         $order->add_meta_data('_shopcommerce_total_value', $stats['total_value'], true);
@@ -236,10 +261,41 @@ function shopcommerce_handle_order_completion($order_id) {
 
         // Save the metadata
         $order->save();
+
+        // Log metadata addition
+        if ($logger) {
+            $logger->info('Added ShopCommerce metadata to completed order', [
+                'order_id' => $order_id,
+                'order_number' => $order->get_order_number(),
+                'product_count' => $stats['total_products'],
+                'brands' => $stats['brands'],
+                'total_value' => $stats['total_value'],
+                'total_quantity' => $stats['total_quantity']
+            ]);
+
+            $logger->log_activity(
+                'order_metadata_added',
+                sprintf(
+                    'Order %s completed with ShopCommerce metadata (%d products, %d brands, $%.2f)',
+                    $order->get_order_number(),
+                    $stats['total_products'],
+                    count($stats['brands']),
+                    $stats['total_value']
+                ),
+                [
+                    'order_id' => $order_id,
+                    'order_number' => $order->get_order_number(),
+                    'product_count' => $stats['total_products'],
+                    'brands' => $stats['brands'],
+                    'total_value' => $stats['total_value'],
+                    'total_quantity' => $stats['total_quantity']
+                ]
+            );
+        }
     }
 
     // Log external provider products
-    shopcommerce_log_order_external_products($order);
+    shopcommerce_log_order_external_products($order, $logger);
 }
 
 /**
@@ -250,20 +306,45 @@ function shopcommerce_handle_order_completion($order_id) {
  * @param int $order_id The new order ID
  */
 function shopcommerce_handle_order_creation($order_id) {
+    // Get logger if available
+    $logger = isset($GLOBALS['shopcommerce_logger']) ? $GLOBALS['shopcommerce_logger'] : null;
+
     // Check if WooCommerce is available
     if (!class_exists('WC_Order')) {
+        if ($logger) {
+            $logger->error('WooCommerce not available for order creation', [
+                'order_id' => $order_id,
+                'function' => 'shopcommerce_handle_order_creation'
+            ]);
+        }
         return;
     }
 
     $order = wc_get_order($order_id);
     if (!$order) {
+        if ($logger) {
+            $logger->error('Order not found for creation processing', [
+                'order_id' => $order_id,
+                'function' => 'shopcommerce_handle_order_creation'
+            ]);
+        }
         return;
+    }
+
+    // Log order creation processing
+    if ($logger) {
+        $logger->info('Processing order creation', [
+            'order_id' => $order_id,
+            'order_number' => $order->get_order_number(),
+            'order_status' => $order->get_status(),
+            'customer_id' => $order->get_customer_id(),
+            'function' => 'shopcommerce_handle_order_creation'
+        ]);
     }
 
     // Check if order has external provider products and log if it does
     if (shopcommerce_order_has_external_provider_products($order)) {
         $stats = shopcommerce_get_order_external_provider_stats($order);
-        $logger = isset($GLOBALS['shopcommerce_logger']) ? $GLOBALS['shopcommerce_logger'] : null;
 
         if ($logger) {
             $log_message = sprintf(
@@ -297,6 +378,15 @@ function shopcommerce_handle_order_creation($order_id) {
                     'total_quantity' => $stats['total_quantity'],
                 ]
             );
+        }
+    } else {
+        // Log that order was created but doesn't have external products
+        if ($logger) {
+            $logger->debug('Order created without external provider products', [
+                'order_id' => $order_id,
+                'order_number' => $order->get_order_number(),
+                'order_status' => $order->get_status()
+            ]);
         }
     }
 }
@@ -448,6 +538,9 @@ function shopcommerce_get_orders_with_shopcommerce_metadata($args = []) {
  * @return array Results of the update operation
  */
 function shopcommerce_update_existing_orders_metadata($args = []) {
+    // Get logger if available
+    $logger = isset($GLOBALS['shopcommerce_logger']) ? $GLOBALS['shopcommerce_logger'] : null;
+
     $default_args = [
         'status' => ['completed', 'processing'],
         'limit' => 100,
@@ -455,6 +548,14 @@ function shopcommerce_update_existing_orders_metadata($args = []) {
     ];
 
     $args = wp_parse_args($args, $default_args);
+
+    // Log the start of metadata update process
+    if ($logger) {
+        $logger->info('Starting existing orders metadata update', [
+            'args' => $args,
+            'function' => 'shopcommerce_update_existing_orders_metadata'
+        ]);
+    }
 
     $orders = wc_get_orders($args);
     $results = [
@@ -464,11 +565,24 @@ function shopcommerce_update_existing_orders_metadata($args = []) {
         'errors' => [],
     ];
 
+    if ($logger) {
+        $logger->info('Retrieved orders for metadata update', [
+            'total_orders_retrieved' => count($orders),
+            'query_args' => $args
+        ]);
+    }
+
     foreach ($orders as $order) {
         try {
             // Skip if already has metadata
             if (shopcommerce_order_has_shopcommerce_metadata($order)) {
                 $results['skipped_orders']++;
+                if ($logger) {
+                    $logger->debug('Skipping order - already has ShopCommerce metadata', [
+                        'order_id' => $order->get_id(),
+                        'order_number' => $order->get_order_number()
+                    ]);
+                }
                 continue;
             }
 
@@ -486,14 +600,63 @@ function shopcommerce_update_existing_orders_metadata($args = []) {
 
                 $order->save();
                 $results['updated_orders']++;
+
+                if ($logger) {
+                    $logger->info('Added ShopCommerce metadata to existing order', [
+                        'order_id' => $order->get_id(),
+                        'order_number' => $order->get_order_number(),
+                        'product_count' => $stats['total_products'],
+                        'brands' => $stats['brands'],
+                        'total_value' => $stats['total_value']
+                    ]);
+                }
             } else {
                 $results['skipped_orders']++;
+                if ($logger) {
+                    $logger->debug('Skipping order - no external provider products', [
+                        'order_id' => $order->get_id(),
+                        'order_number' => $order->get_order_number()
+                    ]);
+                }
             }
         } catch (Exception $e) {
             $results['errors'][] = [
                 'order_id' => $order->get_id(),
                 'error' => $e->getMessage()
             ];
+            if ($logger) {
+                $logger->error('Error updating order metadata', [
+                    'order_id' => $order->get_id(),
+                    'error' => $e->getMessage(),
+                    'trace' => $e->getTraceAsString()
+                ]);
+            }
+        }
+    }
+
+    // Log completion of update process
+    if ($logger) {
+        $logger->info('Completed existing orders metadata update', [
+            'total_orders' => $results['total_orders'],
+            'updated_orders' => $results['updated_orders'],
+            'skipped_orders' => $results['skipped_orders'],
+            'errors_count' => count($results['errors'])
+        ]);
+
+        if ($results['updated_orders'] > 0) {
+            $logger->log_activity(
+                'existing_orders_metadata_updated',
+                sprintf(
+                    'Updated metadata for %d existing orders with ShopCommerce products',
+                    $results['updated_orders']
+                ),
+                [
+                    'total_orders' => $results['total_orders'],
+                    'updated_orders' => $results['updated_orders'],
+                    'skipped_orders' => $results['skipped_orders'],
+                    'errors_count' => count($results['errors'])
+                ]
+            );
         }
     }
 
@@ -508,6 +671,9 @@ function shopcommerce_update_existing_orders_metadata($args = []) {
  * @return array Test results
  */
 function shopcommerce_test_order_processing($order_id) {
+    // Get logger if available
+    $logger = isset($GLOBALS['shopcommerce_logger']) ? $GLOBALS['shopcommerce_logger'] : null;
+
     $results = [
         'success' => false,
         'order_id' => $order_id,
@@ -518,9 +684,21 @@ function shopcommerce_test_order_processing($order_id) {
         'logs' => [],
     ];
 
+    if ($logger) {
+        $logger->info('Starting order processing test', [
+            'order_id' => $order_id,
+            'function' => 'shopcommerce_test_order_processing'
+        ]);
+    }
+
     $order = wc_get_order($order_id);
     if (!$order) {
         $results['error'] = 'Order not found';
+        if ($logger) {
+            $logger->error('Order processing test failed - order not found', [
+                'order_id' => $order_id
+            ]);
+        }
         return $results;
     }
 
@@ -570,5 +748,15 @@ function shopcommerce_test_order_processing($order_id) {
     ];
 
     $results['success'] = true;
+
+    if ($logger) {
+        $logger->info('Order processing test completed successfully', [
+            'order_id' => $order_id,
+            'has_external_products' => $results['has_external_products'],
+            'external_product_count' => count($results['external_products']),
+            'has_metadata' => $results['metadata']['has_metadata']
+        ]);
+    }
+
     return $results;
 }

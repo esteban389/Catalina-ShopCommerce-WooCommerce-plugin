@@ -1501,9 +1501,18 @@ function shopcommerce_ajax_reset_brands_categories() {
  * AJAX handler for getting orders with ShopCommerce metadata
  */
 function shopcommerce_ajax_get_orders() {
+    // Get logger if available
+    $logger = isset($GLOBALS['shopcommerce_logger']) ? $GLOBALS['shopcommerce_logger'] : null;
+
     check_ajax_referer('shopcommerce_admin_nonce', 'nonce');
 
     if (!current_user_can('manage_options')) {
+        if ($logger) {
+            $logger->warning('Unauthorized attempt to access orders data', [
+                'user_id' => get_current_user_id(),
+                'ip' => $_SERVER['REMOTE_ADDR'] ?? 'unknown'
+            ]);
+        }
         wp_send_json_error(['message' => 'Insufficient permissions']);
     }
 
@@ -1512,6 +1521,18 @@ function shopcommerce_ajax_get_orders() {
     $status_filter = isset($_POST['status']) ? sanitize_text_field($_POST['status']) : '';
     $brand_filter = isset($_POST['brand']) ? sanitize_text_field($_POST['brand']) : '';
     $per_page = isset($_POST['per_page']) ? min(50, max(1, intval($_POST['per_page']))) : 20;
+
+    // Log the AJAX request
+    if ($logger) {
+        $logger->info('AJAX request for ShopCommerce orders', [
+            'page' => $page,
+            'search' => $search,
+            'status_filter' => $status_filter,
+            'brand_filter' => $brand_filter,
+            'per_page' => $per_page,
+            'user_id' => get_current_user_id()
+        ]);
+    }
 
     $args = [
         'limit' => $per_page,
@@ -1527,6 +1548,13 @@ function shopcommerce_ajax_get_orders() {
     // Get orders with ShopCommerce metadata
     $orders = shopcommerce_get_orders_with_shopcommerce_metadata($args);
     $orders_data = [];
+
+    if ($logger) {
+        $logger->debug('Retrieved ShopCommerce orders for AJAX', [
+            'total_orders_retrieved' => count($orders),
+            'query_args' => $args
+        ]);
+    }
 
     foreach ($orders as $order) {
         $metadata = shopcommerce_get_order_shopcommerce_metadata($order);
@@ -1595,6 +1623,19 @@ function shopcommerce_ajax_get_orders() {
     $start_item = ($page - 1) * $per_page + 1;
     $end_item = min($page * $per_page, $total_orders);
 
+    // Log the response data
+    if ($logger) {
+        $logger->info('Successfully retrieved ShopCommerce orders', [
+            'orders_count' => count($orders_data),
+            'total_orders' => $total_orders,
+            'current_page' => $page,
+            'total_pages' => $total_pages,
+            'filtered_search' => !empty($search),
+            'filtered_status' => !empty($status_filter),
+            'filtered_brand' => !empty($brand_filter)
+        ]);
+    }
+
     wp_send_json_success([
         'orders' => $orders_data,
         'current_page' => $page,
@@ -1614,19 +1655,47 @@ function shopcommerce_ajax_get_orders() {
  * AJAX handler for getting order details
  */
 function shopcommerce_ajax_get_order_details() {
+    // Get logger if available
+    $logger = isset($GLOBALS['shopcommerce_logger']) ? $GLOBALS['shopcommerce_logger'] : null;
+
     check_ajax_referer('shopcommerce_admin_nonce', 'nonce');
 
     if (!current_user_can('manage_options')) {
+        if ($logger) {
+            $logger->warning('Unauthorized attempt to access order details', [
+                'user_id' => get_current_user_id(),
+                'ip' => $_SERVER['REMOTE_ADDR'] ?? 'unknown'
+            ]);
+        }
         wp_send_json_error(['message' => 'Insufficient permissions']);
     }
 
     $order_id = isset($_POST['order_id']) ? intval($_POST['order_id']) : 0;
     if (!$order_id) {
+        if ($logger) {
+            $logger->warning('Invalid order ID provided for order details', [
+                'order_id' => $order_id,
+                'user_id' => get_current_user_id()
+            ]);
+        }
         wp_send_json_error(['message' => 'Invalid order ID']);
+    }
+
+    if ($logger) {
+        $logger->info('Retrieving order details', [
+            'order_id' => $order_id,
+            'user_id' => get_current_user_id()
+        ]);
     }
 
     $order = wc_get_order($order_id);
     if (!$order) {
+        if ($logger) {
+            $logger->error('Order not found for details retrieval', [
+                'order_id' => $order_id,
+                'user_id' => get_current_user_id()
+            ]);
+        }
         wp_send_json_error(['message' => 'Order not found']);
     }
 
@@ -1659,6 +1728,17 @@ function shopcommerce_ajax_get_order_details() {
         ];
     }
 
+    // Log successful order details retrieval
+    if ($logger) {
+        $logger->info('Successfully retrieved order details', [
+            'order_id' => $order_id,
+            'order_number' => $order->get_order_number(),
+            'items_count' => count($items),
+            'has_external_products' => !empty($external_products),
+            'has_shopcommerce_metadata' => !empty($metadata['brands'])
+        ]);
+    }
+
     wp_send_json_success([
         'order' => [
             'id' => $order->get_id(),
@@ -1680,14 +1760,32 @@ function shopcommerce_ajax_get_order_details() {
  * AJAX handler for updating existing orders metadata
  */
 function shopcommerce_ajax_update_existing_orders_metadata() {
+    // Get logger if available
+    $logger = isset($GLOBALS['shopcommerce_logger']) ? $GLOBALS['shopcommerce_logger'] : null;
+
     check_ajax_referer('shopcommerce_admin_nonce', 'nonce');
 
     if (!current_user_can('manage_options')) {
+        if ($logger) {
+            $logger->warning('Unauthorized attempt to update orders metadata', [
+                'user_id' => get_current_user_id(),
+                'ip' => $_SERVER['REMOTE_ADDR'] ?? 'unknown'
+            ]);
+        }
         wp_send_json_error(['message' => 'Insufficient permissions']);
     }
 
     $limit = isset($_POST['limit']) ? min(500, max(10, intval($_POST['limit']))) : 100;
     $dry_run = isset($_POST['dry_run']) ? filter_var($_POST['dry_run'], FILTER_VALIDATE_BOOLEAN) : false;
+
+    // Log the update request
+    if ($logger) {
+        $logger->info('AJAX request to update existing orders metadata', [
+            'limit' => $limit,
+            'dry_run' => $dry_run,
+            'user_id' => get_current_user_id()
+        ]);
+    }
 
     try {
         if ($dry_run) {
@@ -1706,6 +1804,15 @@ function shopcommerce_ajax_update_existing_orders_metadata() {
                 }
             }
 
+            // Log dry run results
+            if ($logger) {
+                $logger->info('Dry run completed for orders metadata update', [
+                    'total_orders_checked' => count($orders),
+                    'orders_would_update' => $would_update,
+                    'limit' => $limit
+                ]);
+            }
+
             wp_send_json_success([
                 'message' => sprintf('Dry run: %d orders would be updated out of %d checked', $would_update, count($orders)),
                 'dry_run' => true,
@@ -1713,6 +1820,13 @@ function shopcommerce_ajax_update_existing_orders_metadata() {
                 'total_checked' => count($orders),
             ]);
         } else {
+            // Log the actual update start
+            if ($logger) {
+                $logger->info('Starting actual orders metadata update', [
+                    'limit' => $limit
+                ]);
+            }
+
             // Actually update the orders
             $results = shopcommerce_update_existing_orders_metadata([
                 'limit' => $limit,
@@ -1728,6 +1842,16 @@ function shopcommerce_ajax_update_existing_orders_metadata() {
                 $message .= sprintf('. %d errors occurred', count($results['errors']));
             }
 
+            // Log the update results
+            if ($logger) {
+                $logger->info('Completed orders metadata update', [
+                    'updated_orders' => $results['updated_orders'],
+                    'skipped_orders' => $results['skipped_orders'],
+                    'errors_count' => count($results['errors']),
+                    'limit' => $limit
+                ]);
+            }
+
             wp_send_json_success([
                 'message' => $message,
                 'results' => $results,
@@ -1735,6 +1859,15 @@ function shopcommerce_ajax_update_existing_orders_metadata() {
             ]);
         }
     } catch (Exception $e) {
+        // Log the exception
+        if ($logger) {
+            $logger->error('Exception during orders metadata update', [
+                'exception' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+                'limit' => $limit,
+                'dry_run' => $dry_run
+            ]);
+        }
         wp_send_json_error(['message' => 'Error updating orders: ' . $e->getMessage()]);
     }
 }
@@ -1743,9 +1876,18 @@ function shopcommerce_ajax_update_existing_orders_metadata() {
  * AJAX handler for getting incomplete orders with external provider products
  */
 function shopcommerce_ajax_get_incomplete_orders() {
+    // Get logger if available
+    $logger = isset($GLOBALS['shopcommerce_logger']) ? $GLOBALS['shopcommerce_logger'] : null;
+
     check_ajax_referer('shopcommerce_admin_nonce', 'nonce');
 
     if (!current_user_can('manage_options')) {
+        if ($logger) {
+            $logger->warning('Unauthorized attempt to access incomplete orders', [
+                'user_id' => get_current_user_id(),
+                'ip' => $_SERVER['REMOTE_ADDR'] ?? 'unknown'
+            ]);
+        }
         wp_send_json_error(['message' => 'Insufficient permissions']);
     }
 
@@ -1754,6 +1896,18 @@ function shopcommerce_ajax_get_incomplete_orders() {
     $status_filter = isset($_POST['status']) ? sanitize_text_field($_POST['status']) : '';
     $brand_filter = isset($_POST['brand']) ? sanitize_text_field($_POST['brand']) : '';
     $per_page = isset($_POST['per_page']) ? min(50, max(1, intval($_POST['per_page']))) : 20;
+
+    // Log the AJAX request for incomplete orders
+    if ($logger) {
+        $logger->info('AJAX request for incomplete ShopCommerce orders', [
+            'page' => $page,
+            'search' => $search,
+            'status_filter' => $status_filter,
+            'brand_filter' => $brand_filter,
+            'per_page' => $per_page,
+            'user_id' => get_current_user_id()
+        ]);
+    }
 
     $args = [
         'limit' => $per_page,
@@ -1837,6 +1991,19 @@ function shopcommerce_ajax_get_incomplete_orders() {
     $total_pages = max(1, ceil($total_orders / $per_page));
     $start_item = ($page - 1) * $per_page + 1;
     $end_item = min($page * $per_page, $total_orders);
+
+    // Log the response data for incomplete orders
+    if ($logger) {
+        $logger->info('Successfully retrieved incomplete ShopCommerce orders', [
+            'orders_count' => count($orders_data),
+            'total_orders' => $total_orders,
+            'current_page' => $page,
+            'total_pages' => $total_pages,
+            'filtered_search' => !empty($search),
+            'filtered_status' => !empty($status_filter),
+            'filtered_brand' => !empty($brand_filter)
+        ]);
+    }
 
     wp_send_json_success([
         'orders' => $orders_data,
