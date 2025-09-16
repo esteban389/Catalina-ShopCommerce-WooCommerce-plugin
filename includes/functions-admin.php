@@ -234,6 +234,9 @@ function shopcommerce_register_ajax_handlers() {
     // Reset jobs
     add_action('wp_ajax_shopcommerce_reset_jobs', 'shopcommerce_ajax_reset_jobs');
 
+    // Test XML attributes parsing
+    add_action('wp_ajax_shopcommerce_test_xml_attributes', 'shopcommerce_ajax_test_xml_attributes');
+
     // Manage products
     add_action('wp_ajax_shopcommerce_manage_products', 'shopcommerce_ajax_manage_products');
     add_action('wp_ajax_shopcommerce_bulk_products', 'shopcommerce_ajax_bulk_products');
@@ -481,6 +484,43 @@ function shopcommerce_ajax_clear_log_file() {
 
     $logger->clear_log_file();
     wp_send_json_success(['message' => 'Log file cleared successfully']);
+}
+
+/**
+ * AJAX handler for testing XML attributes parsing
+ */
+function shopcommerce_ajax_test_xml_attributes() {
+    check_ajax_referer('shopcommerce_admin_nonce', 'nonce');
+
+    if (!current_user_can('manage_options')) {
+        wp_send_json_error(['message' => 'Insufficient permissions']);
+    }
+
+    $helpers = isset($GLOBALS['shopcommerce_helpers']) ? $GLOBALS['shopcommerce_helpers'] : null;
+    if (!$helpers) {
+        wp_send_json_error(['message' => 'Helpers not available']);
+    }
+
+    $test_json = isset($_POST['test_json']) ? stripslashes($_POST['test_json']) : null;
+
+    if ($test_json) {
+        // Test with provided JSON
+        $parsed = $helpers->parse_xml_attributes($test_json);
+        $formatted = $helpers->format_xml_attributes_html($parsed);
+
+        wp_send_json_success([
+            'test_type' => 'custom',
+            'original_json' => $test_json,
+            'parsed_attributes' => $parsed,
+            'formatted_html' => $formatted,
+            'parse_success' => !empty($parsed),
+            'format_success' => !empty($formatted)
+        ]);
+    } else {
+        // Test with sample data
+        $results = $helpers->test_xml_attributes_parsing();
+        wp_send_json_success($results);
+    }
 }
 
 /**

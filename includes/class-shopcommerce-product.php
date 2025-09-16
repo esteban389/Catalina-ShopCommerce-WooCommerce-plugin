@@ -200,9 +200,21 @@ class ShopCommerce_Product {
      * @return array Mapped product data
      */
     private function map_product_data($product_data, $brand, $sku = null) {
+        // Build enhanced description with XML attributes
+        $description = $product_data['Description'];
+
+        // Parse and add XML attributes if available
+        if (!empty($product_data['xmlAttributes'])) {
+            $xml_attributes = $this->helpers->parse_xml_attributes($product_data['xmlAttributes']);
+            if (!empty($xml_attributes)) {
+                $attributes_html = $this->helpers->format_xml_attributes_html($xml_attributes);
+                $description .= $attributes_html;
+            }
+        }
+
         $mapped_data = [
             'name' => $product_data['Name'],
-            'description' => $product_data['Description'],
+            'description' => $description,
             'regular_price' => $product_data['precio'],
             'stock_quantity' => $product_data['Quantity'],
             'stock_status' => $product_data['Quantity'] > 0 ? 'instock' : 'outofstock',
@@ -224,6 +236,11 @@ class ShopCommerce_Product {
 
         if (!empty($product_data['Categoria'])) {
             $mapped_data['meta_data']['_shopcommerce_categoria'] = $product_data['Categoria'];
+        }
+
+        // Store raw XML attributes JSON for future reference
+        if (!empty($product_data['xmlAttributes'])) {
+            $mapped_data['meta_data']['_shopcommerce_xml_attributes'] = $product_data['xmlAttributes'];
         }
 
         // Handle categories

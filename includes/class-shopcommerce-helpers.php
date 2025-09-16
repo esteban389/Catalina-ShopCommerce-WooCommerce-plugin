@@ -331,7 +331,106 @@ class ShopCommerce_Helpers {
             $sanitized['Imagenes'] = [];
         }
 
+        // XML Attributes (JSON string)
+        if (isset($product_data['xmlAttributes']) && !empty($product_data['xmlAttributes'])) {
+            $sanitized['xmlAttributes'] = $product_data['xmlAttributes'];
+        } else {
+            $sanitized['xmlAttributes'] = null;
+        }
+
         return $sanitized;
+    }
+
+    /**
+     * Parse XML attributes JSON and extract attributes list
+     *
+     * @param string $xml_attributes_json JSON string containing XML attributes
+     * @return array List of formatted attributes [name => value]
+     */
+    public function parse_xml_attributes($xml_attributes_json) {
+        if (empty($xml_attributes_json)) {
+            return [];
+        }
+
+        $attributes = [];
+
+        try {
+            // Decode JSON
+            $decoded = json_decode($xml_attributes_json, true);
+
+            if (json_last_error() !== JSON_ERROR_NONE) {
+                $this->logger->warning('Failed to decode XML attributes JSON', [
+                    'error' => json_last_error_msg(),
+                    'json' => $xml_attributes_json
+                ]);
+                return [];
+            }
+
+            // Navigate through the expected structure
+            if (isset($decoded['ListaAtributos']['Atributos']['attributecs'])) {
+                $attributecs = $decoded['ListaAtributos']['Atributos']['attributecs'];
+
+                // Handle single attribute or array of attributes
+                if (isset($attributecs['AttributeName'])) {
+                    // Single attribute
+                    $attribute_name = $attributecs['AttributeName'];
+                    $attribute_value = $attributecs['AttributeValue'];
+
+                    if (!empty($attribute_name)) {
+                        $attributes[$attribute_name] = $attribute_value;
+                    }
+                } elseif (is_array($attributecs)) {
+                    // Multiple attributes
+                    foreach ($attributecs as $attribute) {
+                        if (isset($attribute['AttributeName']) && !empty($attribute['AttributeName'])) {
+                            $attributes[$attribute['AttributeName']] = $attribute['AttributeValue'] ?? null;
+                        }
+                    }
+                }
+            }
+
+            $this->logger->debug('Parsed XML attributes', [
+                'original_json' => $xml_attributes_json,
+                'parsed_attributes' => $attributes
+            ]);
+
+        } catch (Exception $e) {
+            $this->logger->error('Error parsing XML attributes', [
+                'error' => $e->getMessage(),
+                'json' => $xml_attributes_json
+            ]);
+            return [];
+        }
+
+        return $attributes;
+    }
+
+    /**
+     * Format XML attributes as HTML list for product description
+     *
+     * @param array $attributes Parsed attributes from parse_xml_attributes()
+     * @return string Formatted HTML list
+     */
+    public function format_xml_attributes_html($attributes) {
+        if (empty($attributes)) {
+            return '';
+        }
+
+        $html = '<div class="shopcommerce-product-attributes">';
+        $html .= '<h4>Especificaciones</h4>';
+        $html .= '<ul class="product-specs">';
+
+        foreach ($attributes as $name => $value) {
+            $html .= '<li>';
+            $html .= '<strong>' . esc_html($name) . ':</strong> ';
+            $html .= !empty($value) ? esc_html($value) : '<em>N/A</em>';
+            $html .= '</li>';
+        }
+
+        $html .= '</ul>';
+        $html .= '</div>';
+
+        return $html;
     }
 
     /**
@@ -341,6 +440,32 @@ class ShopCommerce_Helpers {
      */
     public function is_woocommerce_active() {
         return in_array('woocommerce/woocommerce.php', apply_filters('active_plugins', get_option('active_plugins')));
+    }
+
+    /**
+     * Test XML attributes parsing with sample data
+     *
+     * @return array Test results
+     */
+    public function test_xml_attributes_parsing() {
+        $test_json = '{"ListaAtributos":{"Atributos":{"attributecs":{"AttributeName":"ALTURA DEL PAQUETE DE ENVÍO","AttributeValue":null}}}}';
+
+        $this->logger->info('Testing XML attributes parsing', ['test_json' => $test_json]);
+
+        $parsed = $this->parse_xml_attributes($test_json);
+        $formatted = $this->format_xml_attributes_html($parsed);
+
+        $results = [
+            'original_json' => $test_json,
+            'parsed_attributes' => $parsed,
+            'formatted_html' => $formatted,
+            'parse_success' => !empty($parsed),
+            'format_success' => !empty($formatted)
+        ];
+
+        $this->logger->info('XML attributes parsing test results', $results);
+
+        return $results;
     }
 
     /**
