@@ -182,8 +182,8 @@ $log_file_path = SHOPCOMMERCE_SYNC_LOGS_DIR . 'shopcommerce-sync.log';
                         // Get level CSS class
                         $level_class = 'log-level-' . esc_attr($level);
                         ?>
-                        <tr class="log-entry <?php echo $level_class; ?>">
-                            <td class="log-timestamp">
+                        <tr class="log-entry <?php echo $level_class; ?>" data-row-id="<?php echo 'log-row-' . md5($timestamp . $message . $level); ?>">
+                            <td class="log-timestamp" data-timestamp="<?php echo esc_attr($timestamp); ?>">
                                 <?php echo esc_html($formatted_time); ?>
                             </td>
                             <td class="log-level">
@@ -200,7 +200,10 @@ $log_file_path = SHOPCOMMERCE_SYNC_LOGS_DIR . 'shopcommerce-sync.log';
                                             class="button button-small view-context-btn"
                                             data-context="<?php echo esc_attr(json_encode($context)); ?>"
                                             data-level="<?php echo esc_attr($level); ?>"
-                                            data-message="<?php echo esc_attr(substr($message, 0, 100)); ?>">
+                                            data-message="<?php echo esc_attr(substr($message, 0, 100)); ?>"
+                                            data-timestamp="<?php echo esc_attr($timestamp); ?>"
+                                            data-formatted-time="<?php echo esc_attr($formatted_time); ?>"
+                                            data-row-id="<?php echo 'log-row-' . md5($timestamp . $message . $level); ?>">
                                         <?php _e('View Context', 'shopcommerce-sync'); ?>
                                     </button>
                                 <?php else: ?>
@@ -330,6 +333,10 @@ $log_file_path = SHOPCOMMERCE_SYNC_LOGS_DIR . 'shopcommerce-sync.log';
         </div>
         <div class="modal-body">
             <div class="log-info">
+                <div class="log-info-item">
+                    <strong><?php _e('Timestamp:', 'shopcommerce-sync'); ?></strong>
+                    <span id="modal-timestamp"></span>
+                </div>
                 <div class="log-info-item">
                     <strong><?php _e('Level:', 'shopcommerce-sync'); ?></strong>
                     <span id="modal-level" class="log-level-badge"></span>
@@ -572,6 +579,32 @@ $log_file_path = SHOPCOMMERCE_SYNC_LOGS_DIR . 'shopcommerce-sync.log';
     display: none;
 }
 
+/* Active row highlighting */
+.log-entry.active-row {
+    background-color: rgba(0, 115, 170, 0.1) !important;
+    box-shadow: 0 0 0 2px #0073aa;
+    position: relative;
+}
+
+.log-entry.active-row::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 4px;
+    background-color: #0073aa;
+}
+
+.log-entry.active-row .log-timestamp {
+    font-weight: 600;
+}
+
+/* Smooth transitions for row highlighting */
+.log-entry {
+    transition: background-color 0.3s ease, box-shadow 0.3s ease;
+}
+
 @media screen and (max-width: 782px) {
     .log-timestamp,
     .log-level,
@@ -588,9 +621,39 @@ $log_file_path = SHOPCOMMERCE_SYNC_LOGS_DIR . 'shopcommerce-sync.log';
 
 <script>
 jQuery(document).ready(function($) {
+    // Track currently active row
+    var currentActiveRow = null;
+
     // Context modal functionality
-    function showContextModal(context, level, message) {
+    function showContextModal(context, level, message, timestamp, formattedTime, rowId) {
         var modal = $('#context-modal');
+
+        // Highlight the active row
+        if (currentActiveRow) {
+            currentActiveRow.removeClass('active-row');
+        }
+
+        var targetRow = $('#' + rowId);
+        if (targetRow.length) {
+            targetRow.addClass('active-row');
+            currentActiveRow = targetRow;
+
+            // Smooth scroll to the active row if it's not visible
+            var rowOffset = targetRow.offset().top;
+            var containerOffset = targetRow.closest('.log-viewer-container').offset().top;
+            var scrollTop = targetRow.closest('.log-viewer-container').scrollTop();
+            var containerHeight = targetRow.closest('.log-viewer-container').height();
+            var rowTop = rowOffset - containerOffset;
+
+            if (rowTop < 0 || rowTop > containerHeight - 50) {
+                targetRow.closest('.log-viewer-container').animate({
+                    scrollTop: scrollTop + rowTop - 20
+                }, 300);
+            }
+        }
+
+        // Set the timestamp
+        $('#modal-timestamp').text(formattedTime);
 
         // Set the level badge
         var levelBadge = $('#modal-level');
@@ -614,10 +677,23 @@ jQuery(document).ready(function($) {
 
         // Focus on close button for accessibility
         modal.find('.close-modal').focus();
+
+        // Store row ID in modal data for cleanup
+        modal.data('activeRowId', rowId);
     }
 
     function hideContextModal() {
-        $('#context-modal').fadeOut(200);
+        var modal = $('#context-modal');
+        var rowId = modal.data('activeRowId');
+
+        // Remove highlight from active row
+        if (rowId && currentActiveRow) {
+            $('#' + rowId).removeClass('active-row');
+            currentActiveRow = null;
+        }
+
+        modal.fadeOut(200);
+        modal.removeData('activeRowId');
     }
 
     // View context button clicks
@@ -629,8 +705,11 @@ jQuery(document).ready(function($) {
         var context = button.data('context');
         var level = button.data('level');
         var message = button.data('message');
+        var timestamp = button.data('timestamp');
+        var formattedTime = button.data('formatted-time');
+        var rowId = button.data('row-id');
 
-        showContextModal(context, level, message);
+        showContextModal(context, level, message, timestamp, formattedTime, rowId);
     });
 
     // Close modal events
@@ -649,6 +728,14 @@ jQuery(document).ready(function($) {
     $(document).on('keydown', function(e) {
         if (e.key === 'Escape' && $('#context-modal').is(':visible')) {
             hideContextModal();
+        }
+    });
+
+    // Clean up active row highlighting when page is hidden/changed
+    $(document).on('visibilitychange', function() {
+        if (document.hidden && currentActiveRow) {
+            currentActiveRow.removeClass('active-row');
+            currentActiveRow = null;
         }
     });
 });
