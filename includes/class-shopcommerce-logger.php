@@ -163,9 +163,10 @@ class ShopCommerce_Logger {
      *
      * @param int $limit Number of entries to retrieve
      * @param string $activity_type Filter by activity type
+     * @param int $offset Offset for pagination
      * @return array Activity log entries
      */
-    public function get_activity_log($limit = 50, $activity_type = null) {
+    public function get_activity_log($limit = 50, $activity_type = null, $offset = 0) {
         $activities = get_option(self::ACTIVITY_LOG_KEY, []);
 
         // Filter by activity type if specified
@@ -175,8 +176,30 @@ class ShopCommerce_Logger {
             });
         }
 
-        // Limit results
-        return array_slice($activities, 0, $limit);
+        // Reset array keys to ensure proper offset
+        $activities = array_values($activities);
+
+        // Apply offset and limit
+        return array_slice($activities, $offset, $limit);
+    }
+
+    /**
+     * Get activity log count
+     *
+     * @param string $activity_type Filter by activity type
+     * @return int Number of activities
+     */
+    public function get_activity_count($activity_type = null) {
+        $activities = get_option(self::ACTIVITY_LOG_KEY, []);
+
+        // Filter by activity type if specified
+        if ($activity_type !== null) {
+            $activities = array_filter($activities, function($activity) use ($activity_type) {
+                return $activity['type'] === $activity_type;
+            });
+        }
+
+        return count($activities);
     }
 
     /**

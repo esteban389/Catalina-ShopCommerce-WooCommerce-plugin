@@ -447,4 +447,175 @@ class ShopCommerce_Helpers {
             'recent_syncs' => $recent_syncs,
         ];
     }
+
+    /**
+     * Get external provider products with filtering
+     *
+     * @param array $args Filter arguments
+     * @return array Products data
+     */
+    public function get_external_provider_products($args = []) {
+        global $wpdb;
+
+        $defaults = [
+            'search' => '',
+            'status' => 'all',
+            'brand' => '',
+            'limit' => 20,
+            'offset' => 0,
+            'orderby' => 'date',
+            'order' => 'DESC'
+        ];
+
+        $args = wp_parse_args($args, $defaults);
+
+        $where_clauses = ["pm.meta_key = '_external_provider'", "pm.meta_value = 'shopcommerce'"];
+        $join_clauses = ["INNER JOIN {$wpdb->postmeta} pm ON p.ID = pm.post_id"];
+
+        // Status filter
+        if ($args['status'] !== 'all') {
+            $where_clauses[] = $wpdb->prepare("p.post_status = %s", $args['status']);
+        } else {
+            // Exclude trash by default when showing 'all'
+            $where_clauses[] = "p.post_status != 'trash'";
+        }
+
+        // Search filter
+        if (!empty($args['search'])) {
+            $search_like = '%' . $wpdb->esc_like($args['search']) . '%';
+            $where_clauses[] = $wpdb->prepare("(p.post_title LIKE %s OR p.post_content LIKE %s)", $search_like, $search_like);
+        }
+
+        // Brand filter
+        if (!empty($args['brand'])) {
+            $join_clauses[] = "INNER JOIN {$wpdb->postmeta} pm2 ON p.ID = pm2.post_id";
+            $where_clauses[] = $wpdb->prepare("pm2.meta_key = '_external_provider_brand' AND pm2.meta_value = %s", $args['brand']);
+        }
+
+        // Join with postmeta for additional product data
+        $join_clauses[] = "LEFT JOIN {$wpdb->postmeta} pm3 ON p.ID = pm3.post_id AND pm3.meta_key = '_shopcommerce_sku'";
+        $join_clauses[] = "LEFT JOIN {$wpdb->postmeta} pm4 ON p.ID = pm4.post_id AND pm4.meta_key = '_external_provider_sync_date'";
+        $join_clauses[] = "LEFT JOIN {$wpdb->postmeta} pm5 ON p.ID = pm5.post_id AND pm5.meta_key = '_price'";
+        $join_clauses[] = "LEFT JOIN {$wpdb->postmeta} pm6 ON p.ID = pm6.post_id AND pm6.meta_key = '_stock'";
+        $join_clauses[] = "LEFT JOIN {$wpdb->postmeta} pm7 ON p.ID = pm7.post_id AND pm7.meta_key = '_stock_status'";
+
+        // Build query
+        $where_sql = 'WHERE ' . implode(' AND ', $where_clauses);
+        $join_sql = implode(' ', $join_clauses);
+
+        // Order by
+        $orderby = 'p.post_' . $args['orderby'];
+        if ($args['orderby'] === 'price') {
+            $orderby = 'pm7.meta_value';
+        } elseif ($args['orderby'] === 'sync_date') {
+            $orderby = 'pm4.meta_value';
+        }
+        $order = $args['order'];
+
+        $sql = "SELECT DISTINCT p.ID,
+                        p.post_title as name,
+                        p.post_status as status,
+                        pm3.meta_value as sku,
+                        pm2.meta_value as brand,
+                        pm5.meta_value as price,
+                        pm6.meta_value as stock_quantity,
+                        pm7.meta_value as stock_status,
+                        pm4.meta_value as sync_date
+                 FROM {$wpdb->posts} p
+                 $join_sql
+                 $where_sql
+                 ORDER BY $orderby $order
+                 LIMIT %d OFFSET %d";
+
+        $results = $wpdb->get_results($wpdb->prepare($sql, $args['limit'], $args['offset']));
+
+        $products = [];
+        foreach ($results as $row) {
+            $products[] = [
+                'id' => intval($row->ID),
+                'name' => $row->name,
+                'status' => $row->status,
+                'sku' => $row->sku,
+                'brand' => $row->brand,
+                'price' => floatval($row->price) ?: 0,
+                'stock_quantity' => intval($row->stock_quantity) ?: 0,
+                'stock_status' => $row->stock_status ?: 'instock',
+                'sync_date' => $row->sync_date
+            ];
+        }
+
+        return $products;
+    }
+
+    /**
+     * Get external provider products count
+     *
+     * @param array $args Filter arguments
+     * @return int Number of products
+     */
+    public function get_external_provider_products_count($args = []) {
+        global $wpdb;
+
+        $defaults = [
+            'search' => '',
+            'status' => 'all',
+            'brand' => ''
+        ];
+
+        $args = wp_parse_args($args, $defaults);
+
+        $where_clauses = ["pm.meta_key = '_external_provider'", "pm.meta_value = 'shopcommerce'"];
+        $join_clauses = ["INNER JOIN {$wpdb->postmeta} pm ON p.ID = pm.post_id"];
+
+        // Status filter
+        if ($args['status'] !== 'all') {
+            $where_clauses[] = $wpdb->prepare("p.post_status = %s", $args['status']);
+        } else {
+            // Exclude trash by default when showing 'all'
+            $where_clauses[] = "p.post_status != 'trash'";
+        }
+
+        // Search filter
+        if (!empty($args['search'])) {
+            $search_like = '%' . $wpdb->esc_like($args['search']) . '%';
+            $where_clauses[] = $wpdb->prepare("(p.post_title LIKE %s OR p.post_content LIKE %s)", $search_like, $search_like);
+        }
+
+        // Brand filter
+        if (!empty($args['brand'])) {
+            $join_clauses[] = "INNER JOIN {$wpdb->postmeta} pm2 ON p.ID = pm2.post_id";
+            $where_clauses[] = $wpdb->prepare("pm2.meta_key = '_external_provider_brand' AND pm2.meta_value = %s", $args['brand']);
+        }
+
+        $where_sql = 'WHERE ' . implode(' AND ', $where_clauses);
+        $join_sql = implode(' ', $join_clauses);
+
+        $sql = "SELECT COUNT(DISTINCT p.ID)
+                 FROM {$wpdb->posts} p
+                 $join_sql
+                 $where_sql";
+
+        return intval($wpdb->get_var($sql));
+    }
+
+    /**
+     * Get available brands from external provider products
+     *
+     * @return array List of brands
+     */
+    public function get_external_provider_brands() {
+        global $wpdb;
+
+        $brands = $wpdb->get_col(
+            "SELECT DISTINCT pm.meta_value as brand
+             FROM {$wpdb->postmeta} pm
+             INNER JOIN {$wpdb->posts} p ON pm.post_id = p.ID
+             WHERE pm.meta_key = '_external_provider_brand'
+             AND pm.meta_value != ''
+             AND p.post_status != 'trash'
+             ORDER BY pm.meta_value"
+        );
+
+        return $brands;
+    }
 }

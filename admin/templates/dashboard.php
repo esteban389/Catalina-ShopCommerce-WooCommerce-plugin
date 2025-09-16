@@ -111,12 +111,42 @@ if (!defined('ABSPATH')) {
             <div class="alignleft actions">
                 <select id="activity-filter">
                     <option value="">All Activities</option>
-                    <option value="sync_complete">Sync Complete</option>
-                    <option value="sync_error">Sync Errors</option>
-                    <option value="product_created">Products Created</option>
-                    <option value="product_updated">Products Updated</option>
+                    <option value="sync_complete" <?php selected($activity_filter, 'sync_complete'); ?>>Sync Complete</option>
+                    <option value="sync_error" <?php selected($activity_filter, 'sync_error'); ?>>Sync Errors</option>
+                    <option value="product_created" <?php selected($activity_filter, 'product_created'); ?>>Products Created</option>
+                    <option value="product_updated" <?php selected($activity_filter, 'product_updated'); ?>>Products Updated</option>
                 </select>
                 <button type="button" class="button" id="refresh-activity-btn">Refresh</button>
+            </div>
+            <div class="tablenav-pages">
+                <span class="displaying-num">
+                    <?php echo sprintf(
+                        _n(
+                            '%s item',
+                            '%s items',
+                            $total_activities ?? count($activity_log),
+                            'shopcommerce-sync'
+                        ),
+                        number_format($total_activities ?? count($activity_log))
+                    ); ?>
+                </span>
+                <span class="pagination-links">
+                    <button type="button" class="button page-numbers" id="activity-prev-page"
+                            <?php echo ($current_page ?? 1) <= 1 ? 'disabled' : ''; ?>>
+                        &laquo;
+                    </button>
+                    <span class="paging-input">
+                        <label for="activity-current-page" class="screen-reader-text">Current Page</label>
+                        <input type="text" id="activity-current-page" class="current-page"
+                               value="<?php echo $current_page ?? 1; ?>" size="1"
+                               min="1" max="<?php echo $total_pages ?? 1; ?>">
+                        of <span class="total-pages"><?php echo $total_pages ?? 1; ?></span>
+                    </span>
+                    <button type="button" class="button page-numbers" id="activity-next-page"
+                            <?php echo ($current_page ?? 1) >= ($total_pages ?? 1) ? 'disabled' : ''; ?>>
+                        &raquo;
+                    </button>
+                </span>
             </div>
         </div>
 
@@ -133,7 +163,7 @@ if (!defined('ABSPATH')) {
                             <th>Details</th>
                         </tr>
                     </thead>
-                    <tbody>
+                    <tbody id="activity-log-tbody">
                         <?php foreach ($activity_log as $activity): ?>
                             <tr>
                                 <td><?php echo date_i18n('M j, Y g:i A', strtotime($activity['timestamp'])); ?></td>
@@ -309,9 +339,127 @@ jQuery(document).ready(function($) {
 
     // Filter activity
     $('#activity-filter').on('change', function() {
-        var filter = $(this).val();
-        // Reload page with filter parameter
-        window.location.href = window.location.pathname + window.location.search + '&activity_filter=' + filter;
+        loadActivityLog(1, $(this).val());
     });
+
+    // Refresh activity
+    $('#refresh-activity-btn').on('click', function() {
+        loadActivityLog($('#activity-current-page').val(), $('#activity-filter').val());
+    });
+
+    // Pagination
+    $('#activity-prev-page').on('click', function() {
+        var currentPage = parseInt($('#activity-current-page').val());
+        if (currentPage > 1) {
+            loadActivityLog(currentPage - 1, $('#activity-filter').val());
+        }
+    });
+
+    $('#activity-next-page').on('click', function() {
+        var currentPage = parseInt($('#activity-current-page').val());
+        var totalPages = parseInt($('.total-pages').text());
+        if (currentPage < totalPages) {
+            loadActivityLog(currentPage + 1, $('#activity-filter').val());
+        }
+    });
+
+    // Manual page input
+    $('#activity-current-page').on('change', function() {
+        var page = parseInt($(this).val());
+        var totalPages = parseInt($('.total-pages').text());
+        if (page >= 1 && page <= totalPages) {
+            loadActivityLog(page, $('#activity-filter').val());
+        } else {
+            $(this).val($('#activity-current-page').data('current') || 1);
+        }
+    });
+
+    // Load activity log via AJAX
+    function loadActivityLog(page, filter) {
+        var $tbody = $('#activity-log-tbody');
+        var $section = $('.shopcommerce-activity-section');
+
+        $section.addClass('loading');
+
+        $.ajax({
+            url: shopcommerce_admin.ajax_url,
+            type: 'POST',
+            data: {
+                action: 'shopcommerce_load_activity_log',
+                nonce: shopcommerce_admin.nonce,
+                page: page || 1,
+                filter: filter || '',
+                per_page: 20
+            },
+            success: function(response) {
+                if (response.success) {
+                    updateActivityLog(response.data);
+                } else {
+                    alert('Failed to load activity log: ' + response.data.error);
+                }
+            },
+            error: function() {
+                alert('Failed to load activity log due to network error.');
+            },
+            complete: function() {
+                $section.removeClass('loading');
+            }
+        });
+    }
+
+    // Update activity log with new data
+    function updateActivityLog(data) {
+        var $tbody = $('#activity-log-tbody');
+        var $displayingNum = $('.displaying-num');
+        var $totalPages = $('.total-pages');
+        var $currentPage = $('#activity-current-page');
+
+        // Update tbody
+        $tbody.empty();
+
+        if (data.activities.length === 0) {
+            $tbody.append('<tr><td colspan="4">No recent activity found.</td></tr>');
+        } else {
+            data.activities.forEach(function(activity) {
+                var row = '<tr>' +
+                    '<td>' + activity.formatted_time + '</td>' +
+                    '<td><span class="activity-type activity-' + activity.type + '">' +
+                    activity.type_label + '</span></td>' +
+                    '<td>' + activity.description + '</td>' +
+                    '<td>' +
+                    (activity.has_data ?
+                        '<button type="button" class="button button-small view-details-btn" ' +
+                        'data-activity=\'' + JSON.stringify(activity.raw_data) + '\'>View Details</button>' :
+                        '') +
+                    '</td>' +
+                    '</tr>';
+                $tbody.append(row);
+            });
+        }
+
+        // Update pagination info
+        $displayingNum.text(data.displaying_text);
+        $totalPages.text(data.total_pages);
+        $currentPage.val(data.current_page);
+
+        // Update pagination buttons
+        $('#activity-prev-page').prop('disabled', data.current_page <= 1);
+        $('#activity-next-page').prop('disabled', data.current_page >= data.total_pages);
+
+        // Store current page for input validation
+        $currentPage.data('current', data.current_page);
+
+        // Re-attach view details handlers
+        attachViewDetailsHandlers();
+    }
+
+    // Re-attach view details handlers for dynamically loaded content
+    function attachViewDetailsHandlers() {
+        $('.view-details-btn').off('click').on('click', function() {
+            var activity = $(this).data('activity');
+            $('#activity-details-content').text(JSON.stringify(activity, null, 2));
+            $('#activity-details-modal').show();
+        });
+    }
 });
 </script>

@@ -38,6 +38,15 @@ function shopcommerce_admin_menu() {
 
     add_submenu_page(
         'shopcommerce-sync',
+        'Products',
+        'Products',
+        'manage_options',
+        'shopcommerce-sync-products',
+        'shopcommerce_products_page'
+    );
+
+    add_submenu_page(
+        'shopcommerce-sync',
         'Sync Control',
         'Sync Control',
         'manage_options',
@@ -61,7 +70,7 @@ add_action('admin_menu', 'shopcommerce_admin_menu');
  */
 function shopcommerce_admin_enqueue_scripts($hook) {
     // Only load on our plugin pages
-    if (strpos($hook, 'shopcommerce-sync') === false) {
+    if (strpos($hook, 'shopcommerce-sync') === false && $hook !== 'post.php' && $hook !== 'post-new.php') {
         return;
     }
 
@@ -88,6 +97,22 @@ function shopcommerce_admin_enqueue_scripts($hook) {
         'nonce' => wp_create_nonce('shopcommerce_admin_nonce'),
         'plugin_url' => SHOPCOMMERCE_SYNC_PLUGIN_URL
     ]);
+
+    // Enqueue product edit tracking scripts on product edit pages
+    if ($hook === 'post.php' || $hook === 'post-new.php') {
+        wp_enqueue_script(
+            'shopcommerce-product-edit',
+            SHOPCOMMERCE_SYNC_ASSETS_DIR . 'js/product-edit.js',
+            ['jquery'],
+            SHOPCOMMERCE_SYNC_VERSION,
+            true
+        );
+
+        wp_localize_script('shopcommerce-product-edit', 'shopcommerce_product_edit', [
+            'ajax_url' => admin_url('admin-ajax.php'),
+            'nonce' => wp_create_nonce('shopcommerce_product_edit_nonce')
+        ]);
+    }
 }
 add_action('admin_enqueue_scripts', 'shopcommerce_admin_enqueue_scripts');
 
@@ -105,7 +130,17 @@ function shopcommerce_management_page() {
 
     // Get statistics
     $statistics = $sync_handler ? $sync_handler->get_sync_statistics() : [];
-    $activity_log = $logger ? $logger->get_activity_log(20) : [];
+
+    // Get pagination parameters
+    $current_page = isset($_GET['paged']) ? max(1, intval($_GET['paged'])) : 1;
+    $activity_filter = isset($_GET['activity_filter']) ? sanitize_text_field($_GET['activity_filter']) : '';
+    $per_page = 20;
+    $offset = ($current_page - 1) * $per_page;
+
+    // Get activity log with pagination
+    $activity_log = $logger ? $logger->get_activity_log($per_page, $activity_filter ?: null, $offset) : [];
+    $total_activities = $logger ? $logger->get_activity_count($activity_filter ?: null) : 0;
+    $total_pages = max(1, ceil($total_activities / $per_page));
 
     include SHOPCOMMERCE_SYNC_PLUGIN_DIR . 'admin/templates/dashboard.php';
 }
@@ -138,6 +173,17 @@ function shopcommerce_settings_page() {
 }
 
 /**
+ * Products management page
+ */
+function shopcommerce_products_page() {
+    if (!current_user_can('manage_options')) {
+        wp_die(__('You do not have sufficient permissions to access this page.'));
+    }
+
+    include SHOPCOMMERCE_SYNC_PLUGIN_DIR . 'admin/templates/products.php';
+}
+
+/**
  * Register AJAX handlers
  */
 function shopcommerce_register_ajax_handlers() {
@@ -159,8 +205,18 @@ function shopcommerce_register_ajax_handlers() {
     // Get activity log
     add_action('wp_ajax_shopcommerce_activity_log', 'shopcommerce_ajax_activity_log');
 
+    // Load activity log with pagination
+    add_action('wp_ajax_shopcommerce_load_activity_log', 'shopcommerce_ajax_load_activity_log');
+
     // Reset jobs
     add_action('wp_ajax_shopcommerce_reset_jobs', 'shopcommerce_ajax_reset_jobs');
+
+    // Manage products
+    add_action('wp_ajax_shopcommerce_manage_products', 'shopcommerce_ajax_manage_products');
+    add_action('wp_ajax_shopcommerce_bulk_products', 'shopcommerce_ajax_bulk_products');
+
+    // Product edit tracking
+    add_action('wp_ajax_shopcommerce_get_product_edit_history', 'shopcommerce_ajax_get_product_edit_history');
 }
 add_action('admin_init', 'shopcommerce_register_ajax_handlers');
 
@@ -297,6 +353,76 @@ function shopcommerce_ajax_activity_log() {
 }
 
 /**
+ * AJAX handler for loading activity log with pagination
+ */
+function shopcommerce_ajax_load_activity_log() {
+    check_ajax_referer('shopcommerce_admin_nonce', 'nonce');
+
+    if (!current_user_can('manage_options')) {
+        wp_send_json_error(['message' => 'Insufficient permissions']);
+    }
+
+    $logger = isset($GLOBALS['shopcommerce_logger']) ? $GLOBALS['shopcommerce_logger'] : null;
+    if (!$logger) {
+        wp_send_json_error(['message' => 'Logger not available']);
+    }
+
+    $page = isset($_POST['page']) ? max(1, intval($_POST['page'])) : 1;
+    $filter = isset($_POST['filter']) ? sanitize_text_field($_POST['filter']) : '';
+    $per_page = isset($_POST['per_page']) ? min(100, max(1, intval($_POST['per_page']))) : 20;
+
+    $offset = ($page - 1) * $per_page;
+
+    // Get activity log with pagination
+    $activity_log = $logger->get_activity_log($per_page, $filter ?: null, $offset);
+    $total_activities = $logger->get_activity_count($filter ?: null);
+    $total_pages = max(1, ceil($total_activities / $per_page));
+
+    // Format activities for display
+    $formatted_activities = [];
+    foreach ($activity_log as $activity) {
+        $formatted_activities[] = [
+            'id' => $activity['id'] ?? null,
+            'timestamp' => $activity['timestamp'],
+            'formatted_time' => date_i18n('M j, Y g:i A', strtotime($activity['timestamp'])),
+            'type' => $activity['type'],
+            'type_label' => ucfirst(str_replace('_', ' ', $activity['type'])),
+            'description' => $activity['description'],
+            'has_data' => !empty($activity['data']),
+            'raw_data' => $activity
+        ];
+    }
+
+    // Calculate displaying text
+    $start_item = $total_activities > 0 ? $offset + 1 : 0;
+    $end_item = min($offset + $per_page, $total_activities);
+    $displaying_text = sprintf(
+        _n(
+            '%s item',
+            '%s items',
+            $total_activities,
+            'shopcommerce-sync'
+        ),
+        number_format($total_activities)
+    );
+
+    wp_send_json_success([
+        'activities' => $formatted_activities,
+        'current_page' => $page,
+        'total_pages' => $total_pages,
+        'total_items' => $total_activities,
+        'per_page' => $per_page,
+        'displaying_text' => $displaying_text,
+        'showing_items' => $total_activities > 0 ? sprintf(
+            'Showing %d-%d of %d items',
+            $start_item,
+            $end_item,
+            $total_activities
+        ) : 'No items to display'
+    ]);
+}
+
+/**
  * AJAX handler for resetting jobs
  */
 function shopcommerce_ajax_reset_jobs() {
@@ -313,6 +439,158 @@ function shopcommerce_ajax_reset_jobs() {
 
     $cron_scheduler->reset_jobs();
     wp_send_json_success(['message' => 'Jobs reset successfully']);
+}
+
+/**
+ * AJAX handler for managing individual products
+ */
+function shopcommerce_ajax_manage_products() {
+    check_ajax_referer('shopcommerce_admin_nonce', 'nonce');
+
+    if (!current_user_can('manage_options')) {
+        wp_send_json_error(['message' => 'Insufficient permissions']);
+    }
+
+    $product_action = isset($_POST['product_action']) ? sanitize_text_field($_POST['product_action']) : '';
+    $product_ids = isset($_POST['product_ids']) ? array_map('intval', (array) $_POST['product_ids']) : [];
+
+    if (empty($product_action) || empty($product_ids)) {
+        wp_send_json_error(['message' => 'Invalid action or product IDs']);
+    }
+
+    $results = [
+        'success' => 0,
+        'failed' => 0,
+        'errors' => []
+    ];
+
+    foreach ($product_ids as $product_id) {
+        try {
+            switch ($product_action) {
+                case 'trash':
+                    $result = wp_trash_post($product_id);
+                    break;
+                case 'delete':
+                    $result = wp_delete_post($product_id, true);
+                    break;
+                case 'publish':
+                    $result = wp_publish_post($product_id);
+                    break;
+                case 'draft':
+                    $post = get_post($product_id);
+                    $post->post_status = 'draft';
+                    $result = wp_update_post($post);
+                    break;
+                default:
+                    $result = false;
+                    $results['errors'][] = "Invalid action: $product_action";
+                    break;
+            }
+
+            if ($result !== false && !is_wp_error($result)) {
+                $results['success']++;
+            } else {
+                $results['failed']++;
+                if (is_wp_error($result)) {
+                    $results['errors'][] = $result->get_error_message();
+                }
+            }
+        } catch (Exception $e) {
+            $results['failed']++;
+            $results['errors'][] = $e->getMessage();
+        }
+    }
+
+    $message = sprintf(
+        'Action completed: %d products processed successfully, %d failed.',
+        $results['success'],
+        $results['failed']
+    );
+
+    if (!empty($results['errors'])) {
+        $message .= ' Errors: ' . implode(', ', array_slice($results['errors'], 0, 3));
+    }
+
+    wp_send_json_success([
+        'message' => $message,
+        'results' => $results
+    ]);
+}
+
+/**
+ * AJAX handler for bulk product actions
+ */
+function shopcommerce_ajax_bulk_products() {
+    check_ajax_referer('shopcommerce_admin_nonce', 'nonce');
+
+    if (!current_user_can('manage_options')) {
+        wp_send_json_error(['message' => 'Insufficient permissions']);
+    }
+
+    $bulk_action = isset($_POST['bulk_action']) ? sanitize_text_field($_POST['bulk_action']) : '';
+    $product_ids = isset($_POST['product_ids']) ? array_map('intval', (array) $_POST['product_ids']) : [];
+
+    if (empty($bulk_action) || empty($product_ids) || $bulk_action === '-1') {
+        wp_send_json_error(['message' => 'Invalid bulk action or no products selected']);
+    }
+
+    $results = [
+        'success' => 0,
+        'failed' => 0,
+        'errors' => []
+    ];
+
+    foreach ($product_ids as $product_id) {
+        try {
+            switch ($bulk_action) {
+                case 'trash':
+                    $result = wp_trash_post($product_id);
+                    break;
+                case 'delete':
+                    $result = wp_delete_post($product_id, true);
+                    break;
+                case 'publish':
+                    $result = wp_publish_post($product_id);
+                    break;
+                case 'draft':
+                    $post = get_post($product_id);
+                    $post->post_status = 'draft';
+                    $result = wp_update_post($post);
+                    break;
+                default:
+                    $result = false;
+                    $results['errors'][] = "Invalid bulk action: $bulk_action";
+                    break;
+            }
+
+            if ($result !== false && !is_wp_error($result)) {
+                $results['success']++;
+            } else {
+                $results['failed']++;
+                if (is_wp_error($result)) {
+                    $results['errors'][] = $result->get_error_message();
+                }
+            }
+        } catch (Exception $e) {
+            $results['failed']++;
+            $results['errors'][] = $e->getMessage();
+        }
+    }
+
+    $message = sprintf(
+        'Bulk action completed: %d products processed successfully, %d failed.',
+        $results['success'],
+        $results['failed']
+    );
+
+    if (!empty($results['errors'])) {
+        $message .= ' Errors: ' . implode(', ', array_slice($results['errors'], 0, 3));
+    }
+
+    wp_send_json_success([
+        'message' => $message,
+        'results' => $results
+    ]);
 }
 
 /**
@@ -411,3 +689,107 @@ function shopcommerce_set_activation_transient() {
     set_transient('shopcommerce_activated', true, 30);
 }
 add_action('shopcommerce_sync_activate', 'shopcommerce_set_activation_transient');
+
+/**
+ * Track product edits for ShopCommerce products
+ */
+function shopcommerce_track_product_edits($post_id, $post, $update) {
+    // Only track product post types
+    if ($post->post_type !== 'product') {
+        return;
+    }
+
+    // Check if this is a ShopCommerce product
+    $external_provider = get_post_meta($post_id, '_external_provider', true);
+    if ($external_provider !== 'shopcommerce') {
+        return;
+    }
+
+    // Get current product data
+    $product = wc_get_product($post_id);
+    if (!$product) {
+        return;
+    }
+
+    // Get previous values
+    $previous_values = get_post_meta($post_id, '_shopcommerce_previous_values', true);
+    if (empty($previous_values)) {
+        $previous_values = [];
+    }
+
+    $changed_fields = [];
+    $current_values = [
+        'name' => $product->get_name(),
+        'description' => $product->get_description(),
+        'price' => $product->get_price(),
+        'stock_quantity' => $product->get_stock_quantity(),
+        'stock_status' => $product->get_stock_status(),
+        'sku' => $product->get_sku(),
+        'status' => $product->get_status(),
+    ];
+
+    // Compare each field
+    foreach ($current_values as $field => $current_value) {
+        if (isset($previous_values[$field])) {
+            $previous_value = $previous_values[$field];
+            if ($previous_value !== $current_value) {
+                $changed_fields[] = [
+                    'field' => $field,
+                    'previous_value' => $previous_value,
+                    'new_value' => $current_value,
+                    'changed_at' => current_time('mysql')
+                ];
+            }
+        }
+    }
+
+    // Save changed fields
+    if (!empty($changed_fields)) {
+        $existing_changes = get_post_meta($post_id, '_shopcommerce_edited_fields', true);
+        if (empty($existing_changes)) {
+            $existing_changes = [];
+        }
+
+        $existing_changes = array_merge($existing_changes, $changed_fields);
+        update_post_meta($post_id, '_shopcommerce_edited_fields', $existing_changes);
+        update_post_meta($post_id, '_shopcommerce_last_edited', current_time('mysql'));
+        update_post_meta($post_id, '_shopcommerce_edited_by', get_current_user_id());
+    }
+
+    // Store current values for next comparison
+    update_post_meta($post_id, '_shopcommerce_previous_values', $current_values);
+}
+add_action('save_post', 'shopcommerce_track_product_edits', 10, 3);
+
+/**
+ * AJAX handler for getting product edit history
+ */
+function shopcommerce_ajax_get_product_edit_history() {
+    check_ajax_referer('shopcommerce_product_edit_nonce', 'nonce');
+
+    if (!current_user_can('manage_options')) {
+        wp_send_json_error(['message' => 'Insufficient permissions']);
+    }
+
+    $product_id = isset($_POST['product_id']) ? intval($_POST['product_id']) : 0;
+    if (!$product_id) {
+        wp_send_json_error(['message' => 'Invalid product ID']);
+    }
+
+    $edited_fields = get_post_meta($product_id, '_shopcommerce_edited_fields', true);
+    $last_edited = get_post_meta($product_id, '_shopcommerce_last_edited', true);
+    $edited_by = get_post_meta($product_id, '_shopcommerce_edited_by', true);
+
+    $editor_name = '';
+    if ($edited_by) {
+        $editor = get_user_by('id', $edited_by);
+        $editor_name = $editor ? $editor->display_name : 'Unknown';
+    }
+
+    wp_send_json_success([
+        'edited_fields' => $edited_fields ?: [],
+        'last_edited' => $last_edited,
+        'edited_by' => $editor_name,
+        'total_changes' => is_array($edited_fields) ? count($edited_fields) : 0
+    ]);
+}
