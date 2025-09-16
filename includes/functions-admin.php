@@ -1530,7 +1530,21 @@ function shopcommerce_ajax_get_orders() {
 
     foreach ($orders as $order) {
         $metadata = shopcommerce_get_order_shopcommerce_metadata($order);
+
+        // Get better customer data
         $customer = $order->get_formatted_billing_full_name();
+        if (empty($customer)) {
+            $customer = $order->get_formatted_shipping_full_name();
+        }
+        if (empty($customer)) {
+            $customer = $order->get_customer_id() > 0 ? get_user_meta($order->get_customer_id(), 'nickname', true) : 'Guest';
+        }
+        if (empty($customer)) {
+            $customer = 'Guest Customer';
+        }
+
+        // Get edit URL
+        $edit_url = admin_url('post.php?post=' . $order->get_id() . '&action=edit');
 
         // Apply search filter if provided
         if (!empty($search)) {
@@ -1570,6 +1584,7 @@ function shopcommerce_ajax_get_orders() {
             'formatted_date' => date_i18n('M j, Y g:i A', $order->get_date_created()->getTimestamp()),
             'total' => $order->get_total(),
             'formatted_total' => wc_price($order->get_total()),
+            'edit_url' => $edit_url,
             'metadata' => $metadata,
         ];
     }
@@ -1756,7 +1771,20 @@ function shopcommerce_ajax_get_incomplete_orders() {
     $orders_data = [];
 
     foreach ($orders as $order) {
+        // Get better customer data
         $customer = $order->get_formatted_billing_full_name();
+        if (empty($customer)) {
+            $customer = $order->get_formatted_shipping_full_name();
+        }
+        if (empty($customer)) {
+            $customer = $order->get_customer_id() > 0 ? get_user_meta($order->get_customer_id(), 'nickname', true) : 'Guest';
+        }
+        if (empty($customer)) {
+            $customer = 'Guest Customer';
+        }
+
+        // Get edit URL
+        $edit_url = admin_url('post.php?post=' . $order->get_id() . '&action=edit');
 
         // Apply search filter if provided
         if (!empty($search)) {
@@ -1798,6 +1826,7 @@ function shopcommerce_ajax_get_incomplete_orders() {
             'formatted_date' => date_i18n('M j, Y g:i A', $order->get_date_created()->getTimestamp()),
             'total' => $order->get_total(),
             'formatted_total' => wc_price($order->get_total()),
+            'edit_url' => $edit_url,
             'external_product_count' => count($external_products),
             'brands' => !empty($brands) ? implode(', ', $brands) : 'N/A',
         ];

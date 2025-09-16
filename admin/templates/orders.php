@@ -318,10 +318,15 @@ if (!defined('ABSPATH')) {
     border-radius: 4px;
     padding: 20px;
     margin-bottom: 20px;
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    display: flex;
+    flex-wrap: wrap;
     gap: 15px;
-    align-items: end;
+    align-items: flex-end;
+}
+
+.shopcommerce-admin .filter-group {
+    flex: 1;
+    min-width: 200px;
 }
 
 .shopcommerce-admin .filter-group label {
@@ -381,7 +386,7 @@ if (!defined('ABSPATH')) {
 }
 
 .shopcommerce-admin .orders-table .actions {
-    width: 100px;
+    width: 140px;
     text-align: center;
 }
 
@@ -726,6 +731,9 @@ jQuery(document).ready(function($) {
                     <td class="products">${order.product_count || 0}</td>
                     <td class="total">${order.formatted_total}</td>
                     <td class="actions">
+                        <a href="${order.edit_url}" class="button button-small" target="_blank">
+                            Edit
+                        </a>
                         <button type="button" class="button button-small view-incomplete-order-details" data-order-id="${order.id}">
                             View
                         </button>
@@ -863,6 +871,9 @@ jQuery(document).ready(function($) {
                     <td class="products">${order.metadata.product_count || 0}</td>
                     <td class="total">${order.formatted_total}</td>
                     <td class="actions">
+                        <a href="${order.edit_url}" class="button button-small" target="_blank">
+                            Edit
+                        </a>
                         <button type="button" class="button button-small view-order-details" data-order-id="${order.id}">
                             View
                         </button>
