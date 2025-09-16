@@ -16,19 +16,32 @@ This is a WordPress plugin called "ShopCommerce Product Sync Plugin" that synchr
   - `class-shopcommerce-product.php` - WooCommerce product creation and updates
   - `class-shopcommerce-cron.php` - WordPress cron job scheduling and management
   - `class-shopcommerce-sync.php` - Main sync coordination and business logic
+  - `class-shopcommerce-config.php` - Dynamic configuration management with database storage
   - `functions-admin.php` - Admin interface functions and menu setup
-- `admin/templates/` - Admin interface templates for dashboard, settings, products, and sync control
+  - `functions-orders.php` - Order management and external provider product detection
+- `admin/templates/` - Admin interface templates for dashboard, settings, products, orders, brands, sync control, and logs
+- `admin/js/` - JavaScript assets for enhanced admin functionality
 
 ## Key Architecture
 
-### Modular Design
-The plugin follows a modular architecture with clear separation of concerns:
+### Enhanced Architecture
+The plugin follows a modular architecture with recent additions:
+
+**Core Components:**
 - **Bootstrap**: Main plugin file initializes all components
+- **Configuration Manager**: Dynamic brand/category configuration with database storage
+- **Order Management**: External provider product detection and order logging
 - **API Layer**: Handles ShopCommerce API communication with OAuth2 authentication
 - **Product Layer**: Manages WooCommerce product operations
 - **Scheduling Layer**: WordPress cron job management
 - **Logging Layer**: Centralized logging with activity tracking
 - **Admin Layer**: Complete admin interface with dashboard and controls
+
+**New Features:**
+- **Dynamic Configuration**: Database-driven brand and category management
+- **Order Integration**: Automatic detection of external provider products in orders
+- **Enhanced Logging**: Improved activity tracking and log management interface
+- **Brand Management**: Dedicated interface for managing brand configurations
 
 ### API Integration
 - **Base URL**: `https://shopcommerce.mps.com.co:7965/`
@@ -60,17 +73,27 @@ The plugin is configured for selective synchronization:
 
 Since this is a WordPress plugin without a build system, development involves:
 
-### Plugin Testing
-1. **Plugin Installation**: Place plugin in WordPress `wp-content/plugins/` directory
-2. **Activation**: Activate through WordPress admin interface
-3. **Debug Interface**: Access via WordPress Admin → ShopCommerce Sync → Dashboard
-4. **Manual Sync**: Use admin interface to trigger sync manually
+### Plugin Development
+1. **Direct File Editing**: Edit PHP files directly in the plugin directory
+2. **Plugin Testing**: Place plugin in WordPress `wp-content/plugins/` directory
+3. **Activation**: Activate through WordPress admin interface
+4. **Debug Interface**: Access via WordPress Admin → ShopCommerce Sync → Dashboard
+5. **Manual Sync**: Use admin interface to trigger sync manually
 
-### Admin Interface
+### Code Standards
+- Follow WordPress coding standards
+- Use proper PHP documentation blocks
+- Implement WordPress security best practices
+- No automated linting/building configured
+
+### Admin Interface (Enhanced)
 - **Dashboard**: ShopCommerce Sync → Dashboard
 - **Products**: ShopCommerce Sync → Products
+- **Orders**: ShopCommerce Sync → Orders (NEW)
+- **Brands**: ShopCommerce Sync → Brands (NEW)
 - **Sync Control**: ShopCommerce Sync → Sync Control
 - **Settings**: ShopCommerce Sync → Settings
+- **Logs**: ShopCommerce Sync → Logs (ENHANCED)
 
 ### Debug Tools
 - **Manual Sync**: Run next job, full sync, or brand-specific sync
@@ -92,26 +115,42 @@ Since this is a WordPress plugin without a build system, development involves:
 - **Logging**: Configurable log levels and file logging
 
 ### Security Considerations
-- API credentials should be moved to WordPress options or environment variables
-- Current implementation has hardcoded credentials in source code
+
+### Current Implementation
+- API credentials are currently hardcoded in `includes/class-shopcommerce-api.php:33-34`
 - Plugin properly checks for `ABSPATH` to prevent direct access
 - WordPress security best practices should be followed for modifications
 
+### Recommendations
+- Move API credentials to WordPress options or environment variables
+- Implement proper input validation and sanitization
+- Add nonce verification for all admin actions
+- Implement capability checks for admin functions
+- Consider implementing rate limiting for API calls
+
 ## File Structure Details
 
-### Core Classes
-- **ShopCommerce_Logger**: Handles logging with different levels (debug, info, warning, error, critical)
-- **ShopCommerce_API**: Manages API communication with token caching and retry logic
-- **ShopCommerce_Helpers**: Utility functions for WooCommerce operations and data processing
-- **ShopCommerce_Product**: Handles WooCommerce product creation, updates, and SKU conflict resolution
-- **ShopCommerce_Cron**: Manages WordPress cron scheduling and job queue
-- **ShopCommerce_Sync**: Coordinates the entire sync workflow and business logic
+### Core Classes (Updated)
+- **ShopCommerce_Config**: Dynamic configuration management with database storage
+- **ShopCommerce_Logger**: Centralized logging with activity tracking
+- **ShopCommerce_API**: API client with token management and error handling
+- **ShopCommerce_Helpers**: Utility functions for WooCommerce operations
+- **ShopCommerce_Product**: WooCommerce product creation and updates
+- **ShopCommerce_Cron**: Cron job scheduling and management
+- **ShopCommerce_Sync**: Main sync coordination and business logic
 
-### Admin Interface
+### Additional Functions
+- **functions-orders.php**: Order management and external provider product detection
+- **functions-admin.php**: Admin interface functions and menu setup
+
+### Admin Interface (Enhanced)
 - **Dashboard**: Overview with statistics, quick actions, and recent activity
 - **Products**: Product management and filtering
+- **Orders**: Order management with external provider detection (NEW)
+- **Brands**: Brand configuration management (NEW)
 - **Sync Control**: Manual sync operations and queue management
 - **Settings**: Configuration for API, sync behavior, and logging
+- **Logs**: Enhanced activity log viewing and management (ENHANCED)
 
 ### Logging System
 - **Activity Log**: Tracks sync operations, product changes, and errors
@@ -143,6 +182,21 @@ Since this is a WordPress plugin without a build system, development involves:
 
 ## Version Information
 
-- **Current Version**: 2.1.0 (as defined in index.php)
-- **Architecture**: Modular rewrite (v2.0.0+)
+- **Current Version**: 2.3.0 (as defined in index.php plugin header)
+- **Architecture Version**: 2.0.0+ (modular rewrite)
 - **Compatibility**: WordPress 5.0+, WooCommerce 3.0+, PHP 7.2+
+- **Note**: Version constant in index.php shows 2.0.0 but plugin header defines 2.3.0
+
+## Database Schema
+
+The plugin creates custom database tables for configuration management:
+
+### Tables Created
+- `wp_shopcommerce_brands`: Stores brand configurations
+- `wp_shopcommerce_categories`: Stores category mappings
+- `wp_shopcommerce_brand_categories`: Stores brand-category relationships
+
+### Table Management
+- Tables are created automatically on plugin activation
+- Managed through ShopCommerce_Config class
+- Supports dynamic brand and category configuration through admin interface
