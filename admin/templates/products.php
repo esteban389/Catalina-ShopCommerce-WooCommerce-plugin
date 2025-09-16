@@ -160,7 +160,7 @@ $brands = $helpers ? $helpers->get_external_provider_brands() : [];
     <!-- Products Table -->
     <div class="shopcommerce-products-section">
         <form method="post" action="" id="products-form">
-            <?php wp_nonce_field('shopcommerce_products_management', 'products_nonce'); ?>
+            <?php wp_nonce_field('shopcommerce_products_management', 'products_form_nonce'); ?>
             <input type="hidden" name="action" value="shopcommerce_bulk_products">
 
             <table class="wp-list-table widefat fixed striped table-view-list">

@@ -280,7 +280,7 @@ function shopcommerce_register_ajax_handlers() {
     add_action('wp_ajax_shopcommerce_get_sync_jobs', 'shopcommerce_ajax_get_sync_jobs');
 
     // Duplicate product management
-    add_action('wp_ajax_shopcommerce_cleanup_duplicates', 'shopcommerce_ajax_cleanup_duplicates');
+    add_action('wp_ajax_shopcommerce_ajax_cleanup_duplicates', 'shopcommerce_ajax_cleanup_duplicates');
 
     // Manage products
     add_action('wp_ajax_shopcommerce_manage_products', 'shopcommerce_ajax_manage_products');
