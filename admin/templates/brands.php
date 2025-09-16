@@ -643,7 +643,7 @@ jQuery(document).ready(function($) {
             url: shopcommerce_admin.ajax_url,
             type: 'POST',
             data: {
-                action: brandId ? 'shopcommerce_update_brand' : 'shopcommerce_create_brand',
+                action: brandId ? 'shopcommerce_ajax_update_brand' : 'shopcommerce_create_brand',
                 nonce: shopcommerce_admin.nonce,
                 ...Object.fromEntries(new FormData(this))
             },
@@ -763,7 +763,7 @@ jQuery(document).ready(function($) {
             url: shopcommerce_admin.ajax_url,
             type: 'POST',
             data: {
-                action: categoryId ? 'shopcommerce_update_category' : 'shopcommerce_ajax_create_category',
+                action: categoryId ? 'shopcommerce_update_category' : 'shopcommerce_create_category',
                 nonce: shopcommerce_admin.nonce,
                 ...Object.fromEntries(new FormData(this))
             },
@@ -848,21 +848,21 @@ jQuery(document).ready(function($) {
 
         switch(action) {
             case 'toggle-brand':
-                ajaxAction = 'shopcommerce_ajax_toggle_brand';
+                ajaxAction = 'shopcommerce_toggle_brand';
                 data.brand_id = brandId;
                 data.active = active;
                 break;
             case 'toggle-category':
-                ajaxAction = 'shopcommerce_ajax_toggle_category';
+                ajaxAction = 'shopcommerce_toggle_category';
                 data.category_id = categoryId;
                 data.active = active;
                 break;
             case 'delete-brand':
-                ajaxAction = 'shopcommerce_ajax_delete_brand';
+                ajaxAction = 'shopcommerce_delete_brand';
                 data.brand_id = brandId;
                 break;
             case 'delete-category':
-                ajaxAction = 'shopcommerce_ajax_delete_category';
+                ajaxAction = 'shopcommerce_delete_category';
                 data.category_id = categoryId;
                 break;
         }
@@ -974,7 +974,7 @@ jQuery(document).ready(function($) {
                 url: shopcommerce_admin.ajax_url,
                 type: 'POST',
                 data: {
-                    action: 'shopcommerce_ajax_rebuild_jobs',
+                    action: 'shopcommerce_rebuild_jobs',
                     nonce: shopcommerce_admin.nonce
                 },
                 success: function(response) {

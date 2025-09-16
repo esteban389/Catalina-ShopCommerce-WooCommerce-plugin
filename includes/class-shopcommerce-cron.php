@@ -55,14 +55,8 @@ class ShopCommerce_Cron {
         // Register custom cron schedules
         add_filter('cron_schedules', [$this, 'register_cron_schedules']);
 
-        // Schedule the main sync hook
-        if (!wp_next_scheduled(self::HOOK_NAME)) {
-            wp_schedule_event(time(), self::DEFAULT_INTERVAL, self::HOOK_NAME);
-            $this->logger->info('Scheduled main sync hook', [
-                'hook' => self::HOOK_NAME,
-                'interval' => self::DEFAULT_INTERVAL
-            ]);
-        }
+        // Schedule the main sync hook using the centralized method
+        $this->schedule_cron_event(self::DEFAULT_INTERVAL);
     }
 
     /**
@@ -71,9 +65,93 @@ class ShopCommerce_Cron {
     public function deactivate() {
         $this->logger->info('Deactivating ShopCommerce sync plugin');
 
-        // Clear scheduled hooks
-        wp_clear_scheduled_hook(self::HOOK_NAME);
-        $this->logger->info('Cleared scheduled sync hook');
+        // Clear scheduled hooks using the centralized method
+        $this->clear_cron_event();
+    }
+
+    /**
+     * Centralized method to schedule cron events
+     * This is the ONLY method that should directly interface with WordPress cron functions
+     *
+     * @param string $interval Schedule interval (e.g., 'hourly', 'every_minute')
+     * @param int|null $timestamp Optional timestamp to schedule at, defaults to current time
+     * @return bool True if scheduling was successful, false otherwise
+     */
+    private function schedule_cron_event($interval, $timestamp = null) {
+        if ($timestamp === null) {
+            $timestamp = time();
+        }
+
+        // Check if already scheduled
+        if (wp_next_scheduled(self::HOOK_NAME)) {
+            $this->logger->debug('Cron event already scheduled, skipping', [
+                'hook' => self::HOOK_NAME,
+                'interval' => $interval
+            ]);
+            return true;
+        }
+
+        // Schedule the event
+        $scheduled = wp_schedule_event($timestamp, $interval, self::HOOK_NAME);
+
+        if ($scheduled === false) {
+            $this->logger->error('Failed to schedule cron event', [
+                'hook' => self::HOOK_NAME,
+                'interval' => $interval,
+                'timestamp' => $timestamp
+            ]);
+            return false;
+        }
+
+        $next_run = wp_next_scheduled(self::HOOK_NAME);
+        $this->logger->info('Successfully scheduled cron event', [
+            'hook' => self::HOOK_NAME,
+            'interval' => $interval,
+            'timestamp' => $timestamp,
+            'next_run' => $next_run ? date('Y-m-d H:i:s', $next_run) : null
+        ]);
+
+        return true;
+    }
+
+    /**
+     * Centralized method to clear cron events
+     * This is the ONLY method that should directly interface with WordPress cron unscheduling functions
+     *
+     * @return bool True if clearing was successful, false otherwise
+     */
+    private function clear_cron_event() {
+        $cleared = wp_clear_scheduled_hook(self::HOOK_NAME);
+
+        if ($cleared === false) {
+            $this->logger->error('Failed to clear cron event', ['hook' => self::HOOK_NAME]);
+            return false;
+        }
+
+        $this->logger->info('Successfully cleared cron event', ['hook' => self::HOOK_NAME]);
+        return true;
+    }
+
+    /**
+     * Centralized method to get cron information
+     * This is the ONLY method that should directly interface with WordPress cron info functions
+     *
+     * @return array Cron information
+     */
+    private function get_cron_info_internal() {
+        $cron_schedule = wp_get_schedules();
+        $current_schedule = wp_get_schedule(self::HOOK_NAME);
+        $next_scheduled = wp_next_scheduled(self::HOOK_NAME);
+
+        return [
+            'hook_name' => self::HOOK_NAME,
+            'current_schedule' => $current_schedule,
+            'next_scheduled' => $next_scheduled ? date('Y-m-d H:i:s', $next_scheduled) : null,
+            'next_scheduled_timestamp' => $next_scheduled,
+            'available_schedules' => array_keys($cron_schedule),
+            'is_scheduled' => $next_scheduled !== false,
+            'all_schedules' => $cron_schedule,
+        ];
     }
 
     /**
@@ -303,16 +381,15 @@ class ShopCommerce_Cron {
      * @return array Cron schedule information
      */
     public function get_cron_info() {
-        $cron_schedule = wp_get_schedules();
-        $current_schedule = wp_get_schedule(self::HOOK_NAME);
-        $next_scheduled = wp_next_scheduled(self::HOOK_NAME);
+        $info = $this->get_cron_info_internal();
 
+        // Return a subset of information for public consumption
         return [
-            'hook_name' => self::HOOK_NAME,
-            'current_schedule' => $current_schedule,
-            'next_scheduled' => $next_scheduled ? date('Y-m-d H:i:s', $next_scheduled) : null,
-            'available_schedules' => array_keys($cron_schedule),
-            'is_scheduled' => $next_scheduled !== false,
+            'hook_name' => $info['hook_name'],
+            'current_schedule' => $info['current_schedule'],
+            'next_scheduled' => $info['next_scheduled'],
+            'available_schedules' => $info['available_schedules'],
+            'is_scheduled' => $info['is_scheduled'],
         ];
     }
 
@@ -323,17 +400,14 @@ class ShopCommerce_Cron {
      * @return bool True if rescheduling was successful
      */
     public function reschedule($interval) {
-        // Clear existing schedule
-        wp_clear_scheduled_hook(self::HOOK_NAME);
+        // Clear existing schedule using centralized method
+        $this->clear_cron_event();
 
-        // Schedule with new interval
-        $scheduled = wp_schedule_event(time(), $interval, self::HOOK_NAME);
+        // Schedule with new interval using centralized method
+        $scheduled = $this->schedule_cron_event($interval);
 
         if ($scheduled) {
-            $this->logger->info('Rescheduled sync hook', [
-                'interval' => $interval,
-                'next_run' => date('Y-m-d H:i:s', wp_next_scheduled(self::HOOK_NAME))
-            ]);
+            $this->logger->info('Rescheduled sync hook', ['interval' => $interval]);
             return true;
         }
 
@@ -402,7 +476,7 @@ class ShopCommerce_Cron {
     public function get_queue_status() {
         $jobs = $this->get_jobs();
         $current_index = $this->get_job_index();
-        $cron_info = $this->get_cron_info();
+        $cron_info = $this->get_cron_info_internal(); // Use internal method for complete info
 
         $current_job = null;
         $next_job = null;

@@ -136,21 +136,23 @@ $brands = $helpers ? $helpers->get_external_provider_brands() : [];
             </span>
             <span class="pagination-links">
                 <?php
-                $pagination_args = [
-                    'page' => 'shopcommerce-sync-products',
-                    's' => $search,
-                    'status' => $product_status,
-                    'brand' => $brand,
-                    'per_page' => $products_per_page
-                ];
+                // Remove 'paged' from current query args to build clean base URL
+                $current_url = remove_query_arg('paged');
                 echo paginate_links([
-                    'base' => add_query_arg($pagination_args, admin_url('admin.php')),
+                    'base' => $current_url . '%_%',
                     'format' => '&paged=%#%',
                     'prev_text' => '&laquo;',
                     'next_text' => '&raquo;',
                     'total' => $total_pages,
                     'current' => $current_page,
                     'before_page_number' => '<span class="screen-reader-text">Page </span>',
+                    'add_args' => [
+                        'page' => 'shopcommerce-sync-products',
+                        's' => $search,
+                        'status' => $product_status,
+                        'brand' => $brand,
+                        'per_page' => $products_per_page
+                    ],
                 ]);
                 ?>
             </span>
@@ -346,15 +348,26 @@ $brands = $helpers ? $helpers->get_external_provider_brands() : [];
                         ); ?>
                     </span>
                     <span class="pagination-links">
-                        <?php echo paginate_links([
-                            'base' => add_query_arg($pagination_args, admin_url('admin.php')),
+                        <?php
+                        // Remove 'paged' from current query args to build clean base URL
+                        $current_url = remove_query_arg('paged');
+                        echo paginate_links([
+                            'base' => $current_url . '%_%',
                             'format' => '&paged=%#%',
                             'prev_text' => '&laquo;',
                             'next_text' => '&raquo;',
                             'total' => $total_pages,
                             'current' => $current_page,
                             'before_page_number' => '<span class="screen-reader-text">Page </span>',
-                        ]); ?>
+                            'add_args' => [
+                                'page' => 'shopcommerce-sync-products',
+                                's' => $search,
+                                'status' => $product_status,
+                                'brand' => $brand,
+                                'per_page' => $products_per_page
+                            ],
+                        ]);
+                        ?>
                     </span>
                 </div>
             </div>

@@ -293,6 +293,7 @@ function shopcommerce_register_ajax_handlers() {
     add_action('wp_ajax_shopcommerce_toggle_category', 'shopcommerce_ajax_toggle_category');
 
     // Brand-Category relationship management
+    add_action('wp_ajax_shopcommerce_get_brand_categories', 'shopcommerce_ajax_get_brand_categories');
     add_action('wp_ajax_shopcommerce_update_brand_categories', 'shopcommerce_ajax_update_brand_categories');
 
     // Job management
@@ -1165,6 +1166,43 @@ function shopcommerce_ajax_create_brand() {
 }
 
 /**
+ * AJAX handler for updating a brand
+ */
+function shopcommerce_ajax_update_brand() {
+    check_ajax_referer('shopcommerce_admin_nonce', 'nonce');
+
+    if (!current_user_can('manage_options')) {
+        wp_send_json_error(['message' => 'Insufficient permissions']);
+    }
+
+    $config = isset($GLOBALS['shopcommerce_config']) ? $GLOBALS['shopcommerce_config'] : null;
+    if (!$config) {
+        wp_send_json_error(['message' => 'Configuration manager not available']);
+    }
+
+    $brand_id = isset($_POST['brand_id']) ? intval($_POST['brand_id']) : 0;
+    $name = isset($_POST['name']) ? sanitize_text_field($_POST['name']) : '';
+    $description = isset($_POST['description']) ? sanitize_textarea_field($_POST['description']) : '';
+
+    if (!$brand_id || empty($name)) {
+        wp_send_json_error(['message' => 'Brand ID and name are required']);
+    }
+
+    $success = $config->update_brand($brand_id, $name, $description);
+
+    if ($success) {
+        // Rebuild jobs after brand update
+        if (isset($GLOBALS['shopcommerce_cron'])) {
+            $GLOBALS['shopcommerce_cron']->rebuild_jobs();
+        }
+
+        wp_send_json_success(['message' => 'Brand updated successfully']);
+    } else {
+        wp_send_json_error(['message' => 'Failed to update brand']);
+    }
+}
+
+/**
  * AJAX handler for updating brand categories
  */
 function shopcommerce_ajax_update_brand_categories() {
@@ -1380,6 +1418,36 @@ function shopcommerce_ajax_toggle_category() {
 }
 
 /**
+ * AJAX handler for getting brand categories
+ */
+function shopcommerce_ajax_get_brand_categories() {
+    check_ajax_referer('shopcommerce_admin_nonce', 'nonce');
+
+    if (!current_user_can('manage_options')) {
+        wp_send_json_error(['message' => 'Insufficient permissions']);
+    }
+
+    $config = isset($GLOBALS['shopcommerce_config']) ? $GLOBALS['shopcommerce_config'] : null;
+    if (!$config) {
+        wp_send_json_error(['message' => 'Configuration manager not available']);
+    }
+
+    $brand_id = isset($_POST['brand_id']) ? intval($_POST['brand_id']) : 0;
+    if (!$brand_id) {
+        wp_send_json_error(['message' => 'Invalid brand ID']);
+    }
+
+    $brand_categories = $config->get_brand_categories($brand_id);
+    $has_all_categories = $config->brand_has_all_categories($brand_id);
+
+    wp_send_json_success([
+        'brand_id' => $brand_id,
+        'categories' => $brand_categories,
+        'has_all_categories' => $has_all_categories
+    ]);
+}
+
+/**
  * AJAX handler for rebuilding sync jobs from dynamic configuration
  */
 function shopcommerce_ajax_rebuild_jobs() {
@@ -1449,6 +1517,44 @@ function shopcommerce_ajax_cleanup_duplicates() {
         wp_send_json_success($results);
     } catch (Exception $e) {
         wp_send_json_error(['message' => 'Error during cleanup: ' . $e->getMessage()]);
+    }
+}
+
+/**
+ * AJAX handler for updating a category
+ */
+function shopcommerce_ajax_update_category() {
+    check_ajax_referer('shopcommerce_admin_nonce', 'nonce');
+
+    if (!current_user_can('manage_options')) {
+        wp_send_json_error(['message' => 'Insufficient permissions']);
+    }
+
+    $config = isset($GLOBALS['shopcommerce_config']) ? $GLOBALS['shopcommerce_config'] : null;
+    if (!$config) {
+        wp_send_json_error(['message' => 'Configuration manager not available']);
+    }
+
+    $category_id = isset($_POST['category_id']) ? intval($_POST['category_id']) : 0;
+    $name = isset($_POST['name']) ? sanitize_text_field($_POST['name']) : '';
+    $code = isset($_POST['code']) ? intval($_POST['code']) : 0;
+    $description = isset($_POST['description']) ? sanitize_textarea_field($_POST['description']) : '';
+
+    if (!$category_id || empty($name) || empty($code)) {
+        wp_send_json_error(['message' => 'Category ID, name, and code are required']);
+    }
+
+    $success = $config->update_category($category_id, $name, $code, $description);
+
+    if ($success) {
+        // Rebuild jobs after category update
+        if (isset($GLOBALS['shopcommerce_cron'])) {
+            $GLOBALS['shopcommerce_cron']->rebuild_jobs();
+        }
+
+        wp_send_json_success(['message' => 'Category updated successfully']);
+    } else {
+        wp_send_json_error(['message' => 'Failed to update category']);
     }
 }
 
