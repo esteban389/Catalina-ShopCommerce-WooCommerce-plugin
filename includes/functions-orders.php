@@ -14,6 +14,59 @@ if (!defined('ABSPATH')) {
 }
 
 /**
+ * Format address array into a readable string
+ *
+ * @param array $address Address array
+ * @return string Formatted address
+ */
+function shopcommerce_format_address($address) {
+    if (empty($address)) {
+        return '';
+    }
+
+    $formatted_parts = [];
+
+    if (!empty($address['first_name'])) {
+        $formatted_parts[] = trim($address['first_name'] . ' ' . $address['last_name']);
+    }
+
+    if (!empty($address['company'])) {
+        $formatted_parts[] = $address['company'];
+    }
+
+    if (!empty($address['address_1'])) {
+        $formatted_parts[] = $address['address_1'];
+    }
+
+    if (!empty($address['address_2'])) {
+        $formatted_parts[] = $address['address_2'];
+    }
+
+    $city_line = [];
+    if (!empty($address['city'])) {
+        $city_line[] = $address['city'];
+    }
+
+    if (!empty($address['state'])) {
+        $city_line[] = $address['state'];
+    }
+
+    if (!empty($address['postcode'])) {
+        $city_line[] = $address['postcode'];
+    }
+
+    if (!empty($city_line)) {
+        $formatted_parts[] = implode(', ', $city_line);
+    }
+
+    if (!empty($address['country'])) {
+        $formatted_parts[] = $address['country'];
+    }
+
+    return implode("\n", array_filter($formatted_parts));
+}
+
+/**
  * Get ShopCommerce metadata from a product
  *
  * @param int|WC_Product $product Product ID or product object
@@ -186,10 +239,10 @@ function shopcommerce_get_order_shipping_info($order) {
 
     $shipping_info = [
         'shipping_method' => $order->get_shipping_method(),
-        'shipping_method_title' => $order->get_shipping_method_title(),
+        'shipping_method_title' => $order->get_shipping_method(),
         'shipping_total' => $order->get_shipping_total(),
         'shipping_tax' => $order->get_shipping_tax(),
-        'formatted_shipping_total' => $order->get_formatted_shipping_total(),
+        'formatted_shipping_total' => $order->get_shipping_total() > 0 ? wc_price($order->get_shipping_total()) : '',
     ];
 
     // Get shipping address
@@ -206,7 +259,7 @@ function shopcommerce_get_order_shipping_info($order) {
             'postcode' => $shipping_address['postcode'] ?? '',
             'country' => $shipping_address['country'] ?? '',
             'phone' => $shipping_address['phone'] ?? '',
-            'formatted_address' => $order->get_formatted_shipping_address(),
+            'formatted_address' => method_exists($order, 'get_formatted_shipping_address') ? $order->get_formatted_shipping_address() : shopcommerce_format_address($shipping_address),
         ];
     }
 
@@ -226,7 +279,7 @@ function shopcommerce_get_order_shipping_info($order) {
                 'postcode' => $billing_address['postcode'] ?? '',
                 'country' => $billing_address['country'] ?? '',
                 'phone' => $billing_address['phone'] ?? '',
-                'formatted_address' => $order->get_formatted_billing_address(),
+                'formatted_address' => method_exists($order, 'get_formatted_billing_address') ? $order->get_formatted_billing_address() : shopcommerce_format_address($billing_address),
             ];
         }
     }
@@ -278,7 +331,7 @@ function shopcommerce_get_order_client_info($order) {
             'country' => $billing_address['country'] ?? '',
             'email' => $billing_address['email'] ?? '',
             'phone' => $billing_address['phone'] ?? '',
-            'formatted_address' => $order->get_formatted_billing_address(),
+            'formatted_address' => method_exists($order, 'get_formatted_billing_address') ? $order->get_formatted_billing_address() : shopcommerce_format_address($billing_address),
         ];
     }
 
@@ -293,7 +346,7 @@ function shopcommerce_get_order_client_info($order) {
             'display_name' => $customer->get_display_name(),
             'role' => $customer->get_role(),
             'is_paying_customer' => $customer->is_paying_customer(),
-            'date_registered' => $customer->get_date_registered() ? $customer->get_date_registered()->format('Y-m-d H:i:s') : null,
+            'date_registered' => method_exists($customer, 'get_date_registered') ? ($customer->get_date_registered() ? $customer->get_date_registered()->format('Y-m-d H:i:s') : null) : null,
             'order_count' => $customer->get_order_count(),
             'total_spent' => $customer->get_total_spent(),
         ];
@@ -422,7 +475,7 @@ function shopcommerce_log_order_external_products($order, $logger = null) {
         'order_discount_total' => $order->get_discount_total(),
         'order_tax_total' => $order->get_total_tax(),
         'order_shipping_total' => $order->get_shipping_total(),
-        'formatted_order_total' => $order->get_formatted_order_total(),
+        'formatted_order_total' => wc_price($order->get_total()),
         'order_status' => $order->get_status(),
         'order_currency' => $order->get_currency(),
         'payment_method' => $order->get_payment_method(),
