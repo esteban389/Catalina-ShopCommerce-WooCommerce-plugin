@@ -405,30 +405,39 @@ class ShopCommerce_Helpers {
     public function get_sync_statistics() {
         global $wpdb;
 
-        // Count products synced by this plugin
+        // Count products synced by this plugin (excluding trashed)
         $synced_products = $wpdb->get_var(
             "SELECT COUNT(DISTINCT pm.post_id)
              FROM {$wpdb->postmeta} pm
+             INNER JOIN {$wpdb->posts} p ON pm.post_id = p.ID
              WHERE pm.meta_key = '_external_provider'
-             AND pm.meta_value = 'shopcommerce'"
+             AND pm.meta_value = 'shopcommerce'
+             AND p.post_type = 'product'
+             AND p.post_status != 'trash'"
         );
 
-        // Count products by brand
+        // Count products by brand (excluding trashed)
         $products_by_brand = $wpdb->get_results(
             "SELECT pm.meta_value as brand, COUNT(*) as count
              FROM {$wpdb->postmeta} pm
+             INNER JOIN {$wpdb->posts} p ON pm.post_id = p.ID
              WHERE pm.meta_key = '_external_provider_brand'
              AND pm.meta_value != ''
+             AND p.post_type = 'product'
+             AND p.post_status != 'trash'
              GROUP BY pm.meta_value
              ORDER BY count DESC"
         );
 
-        // Get recent sync activity
+        // Get recent sync activity (excluding trashed)
         $recent_syncs = $wpdb->get_results(
-            "SELECT post_id, meta_value as sync_date
-             FROM {$wpdb->postmeta}
-             WHERE meta_key = '_external_provider_sync_date'
-             ORDER BY meta_value DESC
+            "SELECT pm.post_id, pm.meta_value as sync_date
+             FROM {$wpdb->postmeta} pm
+             INNER JOIN {$wpdb->posts} p ON pm.post_id = p.ID
+             WHERE pm.meta_key = '_external_provider_sync_date'
+             AND p.post_type = 'product'
+             AND p.post_status != 'trash'
+             ORDER BY pm.meta_value DESC
              LIMIT 10"
         );
 

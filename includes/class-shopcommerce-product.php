@@ -417,6 +417,7 @@ class ShopCommerce_Product {
              FROM {$wpdb->posts} p
              INNER JOIN {$wpdb->postmeta} pm ON p.ID = pm.post_id
              WHERE p.post_type = 'product'
+             AND p.post_status != 'trash'
              AND pm.meta_key = '_external_provider'
              AND pm.meta_value = 'shopcommerce'
              AND NOT EXISTS (
@@ -440,6 +441,7 @@ class ShopCommerce_Product {
              FROM {$wpdb->posts} p
              INNER JOIN {$wpdb->postmeta} pm ON p.ID = pm.post_id
              WHERE p.post_type = 'product'
+             AND p.post_status != 'trash'
              AND pm.meta_key = '_external_provider'
              AND pm.meta_value = 'shopcommerce'
              AND EXISTS (
@@ -466,6 +468,7 @@ class ShopCommerce_Product {
              FROM {$wpdb->posts} p
              INNER JOIN {$wpdb->postmeta} pm ON p.ID = pm.post_id
              WHERE p.post_type = 'product'
+             AND p.post_status != 'trash'
              AND pm.meta_key = '_external_provider'
              AND pm.meta_value = 'shopcommerce'
              AND EXISTS (
