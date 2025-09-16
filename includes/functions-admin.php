@@ -288,6 +288,9 @@ function shopcommerce_register_ajax_handlers() {
 
     // Product edit tracking
     add_action('wp_ajax_shopcommerce_get_product_edit_history', 'shopcommerce_ajax_get_product_edit_history');
+
+    // Reset brands and categories
+    add_action('wp_ajax_shopcommerce_reset_brands_categories', 'shopcommerce_ajax_reset_brands_categories');
 }
 add_action('admin_init', 'shopcommerce_register_ajax_handlers');
 
@@ -1415,5 +1418,55 @@ function shopcommerce_ajax_cleanup_duplicates() {
         wp_send_json_success($results);
     } catch (Exception $e) {
         wp_send_json_error(['message' => 'Error during cleanup: ' . $e->getMessage()]);
+    }
+}
+
+/**
+ * AJAX handler for resetting brands and categories to defaults
+ */
+function shopcommerce_ajax_reset_brands_categories() {
+    check_ajax_referer('shopcommerce_admin_nonce', 'nonce');
+
+    if (!current_user_can('manage_options')) {
+        wp_send_json_error(['message' => 'Insufficient permissions']);
+    }
+
+    $config = isset($GLOBALS['shopcommerce_config']) ? $GLOBALS['shopcommerce_config'] : null;
+    if (!$config) {
+        wp_send_json_error(['message' => 'Configuration manager not available']);
+    }
+
+    $logger = isset($GLOBALS['shopcommerce_logger']) ? $GLOBALS['shopcommerce_logger'] : null;
+
+    try {
+        // Reset brands and categories using the config manager
+        $result = $config->reset_to_defaults();
+
+        if ($result) {
+            // Rebuild sync jobs after reset
+            if (isset($GLOBALS['shopcommerce_cron'])) {
+                $GLOBALS['shopcommerce_cron']->rebuild_jobs();
+            }
+
+            if ($logger) {
+                $logger->info('Brands and categories reset to defaults by admin');
+            }
+
+            wp_send_json_success([
+                'message' => 'Brands and categories have been successfully reset to defaults'
+            ]);
+        } else {
+            wp_send_json_error(['message' => 'Failed to reset brands and categories']);
+        }
+    } catch (Exception $e) {
+        $error_message = $e->getMessage();
+
+        if ($logger) {
+            $logger->error('Error resetting brands and categories', [
+                'error' => $error_message
+            ]);
+        }
+
+        wp_send_json_error(['message' => 'Error during reset: ' . $error_message]);
     }
 }

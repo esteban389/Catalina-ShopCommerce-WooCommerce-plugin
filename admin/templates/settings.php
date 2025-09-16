@@ -358,6 +358,9 @@ jQuery(document).ready(function($) {
     $('#reset-settings-btn').on('click', function() {
         if (confirm('Are you sure you want to reset all settings to their default values?')) {
             if (confirm('This action cannot be undone. Are you absolutely sure?')) {
+                // Ask about resetting brands and categories
+                var resetBrandsCategories = confirm('Would you also like to reset all brands and categories to their default configuration?\n\nThis will remove all custom brands and categories and restore the original default setup.');
+
                 // Reset form fields to defaults
                 $('#shopcommerce_api_username').val('pruebas@hekalsoluciones.com');
                 $('#shopcommerce_api_password').val('');
@@ -372,7 +375,35 @@ jQuery(document).ready(function($) {
                 $('#shopcommerce_update_images').prop('checked', true);
                 $('#shopcommerce_create_categories').prop('checked', true);
 
-                alert('Settings have been reset to defaults. Click "Save Settings" to apply.');
+                if (resetBrandsCategories) {
+                    // Show loading message
+                    var $btn = $(this);
+                    $btn.prop('disabled', true).text('Resetting...');
+
+                    $.ajax({
+                        url: shopcommerce_admin.ajax_url,
+                        type: 'POST',
+                        data: {
+                            action: 'shopcommerce_reset_brands_categories',
+                            nonce: shopcommerce_admin.nonce
+                        },
+                        success: function(response) {
+                            if (response.success) {
+                                alert('Settings have been reset to defaults.\n\nBrands and categories have been reset to default configuration.\n\nClick "Save Settings" to apply the settings changes.');
+                            } else {
+                                alert('Settings have been reset to defaults, but there was an error resetting brands and categories: ' + response.data.message + '\n\nClick "Save Settings" to apply the settings changes.');
+                            }
+                        },
+                        error: function() {
+                            alert('Settings have been reset to defaults, but there was a network error while resetting brands and categories.\n\nClick "Save Settings" to apply the settings changes.');
+                        },
+                        complete: function() {
+                            $btn.prop('disabled', false).text('Reset to Defaults');
+                        }
+                    });
+                } else {
+                    alert('Settings have been reset to defaults. Click "Save Settings" to apply.');
+                }
             }
         }
     });

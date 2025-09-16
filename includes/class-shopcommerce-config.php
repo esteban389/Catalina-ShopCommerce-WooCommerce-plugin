@@ -594,4 +594,38 @@ class ShopCommerce_Config {
 
         return false;
     }
+
+    /**
+     * Reset all brands and categories to default configuration
+     *
+     * This will clear all existing brands and categories and restore the default setup
+     *
+     * @return bool Success status
+     */
+    public function reset_to_defaults() {
+        global $wpdb;
+
+        try {
+            $this->logger->info('Starting reset of brands and categories to defaults');
+
+            // Clear all existing data
+            $wpdb->query("TRUNCATE TABLE {$this->brand_categories_table}");
+            $wpdb->query("TRUNCATE TABLE {$this->categories_table}");
+            $wpdb->query("TRUNCATE TABLE {$this->brands_table}");
+
+            $this->logger->info('Cleared all existing brands and categories');
+
+            // Reinitialize with default data
+            $this->initialize_default_data();
+
+            $this->logger->info('Successfully reset brands and categories to defaults');
+            return true;
+
+        } catch (Exception $e) {
+            $this->logger->error('Error during reset to defaults', [
+                'error' => $e->getMessage()
+            ]);
+            return false;
+        }
+    }
 }
