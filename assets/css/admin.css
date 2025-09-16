@@ -1,0 +1,448 @@
+/**
+ * ShopCommerce Sync Admin Styles
+ *
+ * @package ShopCommerce_Sync
+ */
+
+/* Main admin styles */
+.shopcommerce-admin {
+    max-width: 1200px;
+    margin: 20px 0;
+}
+
+.shopcommerce-admin h1 {
+    margin-bottom: 20px;
+}
+
+.shopcommerce-admin .notice {
+    margin: 20px 0;
+}
+
+/* Status Cards */
+.shopcommerce-status-cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 20px;
+    margin: 20px 0;
+}
+
+.shopcommerce-status-cards .card {
+    background: #fff;
+    border: 1px solid #ccd0d4;
+    border-radius: 4px;
+    padding: 20px;
+    text-align: center;
+}
+
+.shopcommerce-status-cards .card h3 {
+    margin: 0 0 10px 0;
+    font-size: 14px;
+    font-weight: 600;
+    color: #50575e;
+    text-transform: uppercase;
+}
+
+.shopcommerce-status-cards .card .stat-number {
+    font-size: 32px;
+    font-weight: bold;
+    color: #0073aa;
+    line-height: 1;
+    margin-bottom: 5px;
+}
+
+.shopcommerce-status-cards .card .stat-number.status-good {
+    color: #46b450;
+}
+
+.shopcommerce-status-cards .card .stat-number.status-warning {
+    color: #ffb900;
+}
+
+.shopcommerce-status-cards .card .stat-number.status-error {
+    color: #dc3232;
+}
+
+.shopcommerce-status-cards .card .stat-label {
+    font-size: 13px;
+    color: #666;
+}
+
+/* Quick Actions */
+.shopcommerce-quick-actions {
+    background: #fff;
+    border: 1px solid #ccd0d4;
+    border-radius: 4px;
+    padding: 20px;
+    margin: 20px 0;
+}
+
+.shopcommerce-quick-actions h2 {
+    margin-top: 0;
+    margin-bottom: 15px;
+    font-size: 18px;
+}
+
+.shopcommerce-quick-actions .actions-grid {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.shopcommerce-quick-actions .button {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.shopcommerce-quick-actions .dashicons {
+    font-size: 16px;
+}
+
+/* Statistics */
+.shopcommerce-stats-section {
+    background: #fff;
+    border: 1px solid #ccd0d4;
+    border-radius: 4px;
+    padding: 20px;
+    margin: 20px 0;
+}
+
+.shopcommerce-stats-section h2 {
+    margin-top: 0;
+    margin-bottom: 15px;
+    font-size: 18px;
+}
+
+.stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 15px;
+}
+
+.stat-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 15px;
+    background: #f8f9fa;
+    border-radius: 4px;
+}
+
+.stat-item .stat-label {
+    font-weight: 600;
+    color: #50575e;
+}
+
+.stat-item .stat-value {
+    font-weight: bold;
+    color: #0073aa;
+}
+
+/* Activity Log */
+.shopcommerce-activity-section {
+    background: #fff;
+    border: 1px solid #ccd0d4;
+    border-radius: 4px;
+    padding: 20px;
+    margin: 20px 0;
+}
+
+.shopcommerce-activity-section h2 {
+    margin-top: 0;
+    margin-bottom: 15px;
+    font-size: 18px;
+}
+
+.shopcommerce-activity-log {
+    margin-top: 15px;
+}
+
+.activity-type {
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+.activity-sync_complete {
+    background: #d4edda;
+    color: #155724;
+}
+
+.activity-sync_error {
+    background: #f8d7da;
+    color: #721c24;
+}
+
+.activity-product_created {
+    background: #cce5ff;
+    color: #004085;
+}
+
+.activity-product_updated {
+    background: #fff3cd;
+    color: #856404;
+}
+
+/* System Status */
+.shopcommerce-system-section {
+    background: #fff;
+    border: 1px solid #ccd0d4;
+    border-radius: 4px;
+    padding: 20px;
+    margin: 20px 0;
+}
+
+.shopcommerce-system-section h2 {
+    margin-top: 0;
+    margin-bottom: 15px;
+    font-size: 18px;
+}
+
+.system-status-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 15px;
+}
+
+.status-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 15px;
+    background: #f8f9fa;
+    border-radius: 4px;
+}
+
+.status-item .status-label {
+    font-weight: 600;
+    color: #50575e;
+}
+
+.status-item .status-value {
+    font-weight: bold;
+}
+
+.status-item .status-value.status-good {
+    color: #46b450;
+}
+
+.status-item .status-value.status-warning {
+    color: #ffb900;
+}
+
+.status-item .status-value.status-error {
+    color: #dc3232;
+}
+
+/* Modal */
+.shopcommerce-modal {
+    position: fixed;
+    z-index: 100000;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.shopcommerce-modal .modal-content {
+    background: #fff;
+    border-radius: 4px;
+    max-width: 800px;
+    max-height: 80vh;
+    width: 90%;
+    margin: 20px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.shopcommerce-modal .modal-header {
+    padding: 15px 20px;
+    border-bottom: 1px solid #eee;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.shopcommerce-modal .modal-header h3 {
+    margin: 0;
+    font-size: 18px;
+}
+
+.shopcommerce-modal .close-modal {
+    background: none;
+    border: none;
+    font-size: 20px;
+    cursor: pointer;
+    color: #666;
+    padding: 0;
+    width: 30px;
+    height: 30px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 3px;
+}
+
+.shopcommerce-modal .close-modal:hover {
+    background: #f0f0f0;
+    color: #000;
+}
+
+.shopcommerce-modal .modal-body {
+    padding: 20px;
+    overflow-y: auto;
+    max-height: calc(80vh - 120px);
+}
+
+.shopcommerce-modal pre {
+    background: #f8f9fa;
+    border: 1px solid #ddd;
+    padding: 15px;
+    border-radius: 4px;
+    font-size: 12px;
+    overflow-x: auto;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+}
+
+/* Loading indicators */
+.loading {
+    position: relative;
+}
+
+.loading::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(255, 255, 255, 0.8);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.loading::before {
+    content: 'Loading...';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 1;
+}
+
+/* Responsive */
+@media (max-width: 782px) {
+    .shopcommerce-status-cards {
+        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    }
+
+    .stats-grid,
+    .system-status-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .shopcommerce-quick-actions .actions-grid {
+        flex-direction: column;
+    }
+
+    .shopcommerce-quick-actions .button {
+        width: 100%;
+        justify-content: center;
+    }
+}
+
+/* Table styling */
+.shopcommerce-admin .wp-list-table {
+    margin-top: 15px;
+}
+
+.shopcommerce-admin .tablenav {
+    margin-bottom: 15px;
+}
+
+.shopcommerce-admin .alignleft.actions {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+}
+
+/* Form styling */
+.shopcommerce-admin .form-table {
+    margin-top: 15px;
+}
+
+.shopcommerce-admin .form-table th {
+    width: 200px;
+}
+
+.shopcommerce-admin .form-table td {
+    padding: 15px 10px;
+}
+
+.shopcommerce-admin .form-table .description {
+    margin-top: 5px;
+    color: #666;
+    font-style: italic;
+}
+
+/* Error styling */
+.shopcommerce-admin .error {
+    color: #dc3232;
+    font-weight: bold;
+}
+
+/* Success styling */
+.shopcommerce-admin .success {
+    color: #46b450;
+    font-weight: bold;
+}
+
+/* Utility classes */
+.text-center {
+    text-align: center;
+}
+
+.text-left {
+    text-align: left;
+}
+
+.text-right {
+    text-align: right;
+}
+
+.mb-0 {
+    margin-bottom: 0;
+}
+
+.mb-1 {
+    margin-bottom: 10px;
+}
+
+.mb-2 {
+    margin-bottom: 20px;
+}
+
+.mb-3 {
+    margin-bottom: 30px;
+}
+
+.hidden {
+    display: none;
+}
+
+/* Animation */
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+.spin {
+    animation: spin 1s linear infinite;
+}

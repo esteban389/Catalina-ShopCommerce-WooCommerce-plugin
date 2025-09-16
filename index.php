@@ -1,8 +1,9 @@
 <?php
+
 /**
  * Plugin Name:       ShopCommerce Product Sync Plugin
  * Description:       A plugin to sync products from ShopCommerce with WooCommerce, specially for Hekalsoluciones.
- * Version:           1.1.0
+ * Version:           2.0.0
  * Author:            Esteban Andres Murcia Acuña
  * Author URI:        https://estebanmurcia.dev/
  * License:           GPL-2.0+
@@ -11,19 +12,89 @@
  */
 
 // Exit if accessed directly.
-if ( ! defined( 'ABSPATH' ) ) {
+if (!defined('ABSPATH')) {
     exit;
 }
 
-// Include the files containing the main classes
-require_once plugin_dir_path( __FILE__ ) . 'includes/product-sync.php';
-require_once plugin_dir_path( __FILE__ ) . 'includes/admin-management-page.php';
-//require_once plugin_dir_path( __FILE__ ) . 'includes/class-order-handler.php';
-//require_once plugin_dir_path( __FILE__ ) . 'includes/class-checkout-customizer.php';
+// Define plugin constants
+define('SHOPCOMMERCE_SYNC_VERSION', '2.0.0');
+define('SHOPCOMMERCE_SYNC_PLUGIN_DIR', plugin_dir_path(__FILE__));
+define('SHOPCOMMERCE_SYNC_PLUGIN_URL', plugin_dir_url(__FILE__));
+define('SHOPCOMMERCE_SYNC_INCLUDES_DIR', SHOPCOMMERCE_SYNC_PLUGIN_DIR . 'includes/');
+define('SHOPCOMMERCE_SYNC_ASSETS_DIR', SHOPCOMMERCE_SYNC_PLUGIN_URL . 'assets/');
+define('SHOPCOMMERCE_SYNC_LOGS_DIR', SHOPCOMMERCE_SYNC_PLUGIN_DIR . 'logs/');
 
-// Instantiate the classes to set up the hooks
-//new My_Provider_Order_Handler();
-//new My_Provider_Checkout_Customizer();
+// Include the main classes
+require_once SHOPCOMMERCE_SYNC_INCLUDES_DIR . 'class-shopcommerce-logger.php';
+require_once SHOPCOMMERCE_SYNC_INCLUDES_DIR . 'class-shopcommerce-api.php';
+require_once SHOPCOMMERCE_SYNC_INCLUDES_DIR . 'class-shopcommerce-helpers.php';
+require_once SHOPCOMMERCE_SYNC_INCLUDES_DIR . 'class-shopcommerce-product.php';
+require_once SHOPCOMMERCE_SYNC_INCLUDES_DIR . 'class-shopcommerce-cron.php';
+require_once SHOPCOMMERCE_SYNC_INCLUDES_DIR . 'class-shopcommerce-sync.php';
 
-register_activation_hook( __FILE__, 'product_sync_plugin_activate' );
-register_deactivation_hook( __FILE__, 'product_sync_plugin_deactivate' );
+// Include admin functions
+require_once SHOPCOMMERCE_SYNC_INCLUDES_DIR . 'functions-admin.php';
+
+// Initialize the plugin
+function shopcommerce_sync_init()
+{
+    // Initialize the logger first
+    $logger = new ShopCommerce_Logger();
+
+    // Initialize the API client
+    $api_client = new ShopCommerce_API($logger);
+
+    // Initialize helpers
+    $helpers = new ShopCommerce_Helpers($logger);
+
+    // Initialize product handler
+    $product_handler = new ShopCommerce_Product($logger, $helpers);
+
+    // Initialize cron scheduler
+    $cron_scheduler = new ShopCommerce_Cron($logger);
+
+    // Initialize main sync logic
+    $sync_handler = new ShopCommerce_Sync($logger, $api_client, $product_handler, $cron_scheduler);
+
+    // Make instances available globally if needed
+    $GLOBALS['shopcommerce_logger'] = $logger;
+    $GLOBALS['shopcommerce_api'] = $api_client;
+    $GLOBALS['shopcommerce_helpers'] = $helpers;
+    $GLOBALS['shopcommerce_product'] = $product_handler;
+    $GLOBALS['shopcommerce_cron'] = $cron_scheduler;
+    $GLOBALS['shopcommerce_sync'] = $sync_handler;
+}
+
+// Initialize plugin on WordPress 'init' hook
+add_action('init', 'shopcommerce_sync_init');
+
+// Plugin activation hook
+register_activation_hook(__FILE__, 'shopcommerce_sync_activate');
+
+function shopcommerce_sync_activate()
+{
+    // Create logs directory if it doesn't exist
+    if (!file_exists(SHOPCOMMERCE_SYNC_LOGS_DIR)) {
+        wp_mkdir_p(SHOPCOMMERCE_SYNC_LOGS_DIR);
+    }
+
+    // Initialize cron scheduler
+    if (class_exists('ShopCommerce_Cron')) {
+        $logger = new ShopCommerce_Logger();
+        $cron_scheduler = new ShopCommerce_Cron($logger);
+        $cron_scheduler->activate();
+    }
+}
+
+// Plugin deactivation hook
+register_deactivation_hook(__FILE__, 'shopcommerce_sync_deactivate');
+
+function shopcommerce_sync_deactivate()
+{
+    // Deinitialize cron scheduler
+    if (class_exists('ShopCommerce_Cron')) {
+        $logger = new ShopCommerce_Logger();
+        $cron_scheduler = new ShopCommerce_Cron($logger);
+        $cron_scheduler->deactivate();
+    }
+}
