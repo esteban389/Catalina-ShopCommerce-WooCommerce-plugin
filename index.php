@@ -94,13 +94,13 @@ function shopcommerce_sync_activate()
     }
 }
 
-// Hook into WooCommerce order completion
+// Hook into WooCommerce order completion for metadata and logging
 add_action('woocommerce_order_status_completed', 'shopcommerce_handle_order_completion');
 
-// Also hook into order processing (for partial fulfillment tracking)
+// Also hook into order processing for partial fulfillment tracking
 add_action('woocommerce_order_status_processing', 'shopcommerce_handle_order_completion');
 
-// Hook into order creation for tracking
+// Hook into order creation for logging
 add_action('woocommerce_new_order', 'shopcommerce_handle_order_creation');
 
 // Plugin deactivation hook

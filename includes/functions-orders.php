@@ -206,6 +206,7 @@ function shopcommerce_log_order_external_products($order, $logger = null) {
  * Handle order completion event
  *
  * This function is hooked to woocommerce_order_status_completed and woocommerce_order_status_processing
+ * It adds metadata and logs activity for orders with external provider products
  *
  * @param int $order_id The order ID
  */
@@ -259,38 +260,26 @@ function shopcommerce_handle_order_creation($order_id) {
         return;
     }
 
-    // Check if order has external provider products
+    // Check if order has external provider products and log if it does
     if (shopcommerce_order_has_external_provider_products($order)) {
         $stats = shopcommerce_get_order_external_provider_stats($order);
-
-        // Add metadata to identify order with external provider products
-        $order->add_meta_data('_has_shopcommerce_products', 'yes', true);
-        $order->add_meta_data('_shopcommerce_order_created', current_time('mysql'), true);
-        $order->add_meta_data('_shopcommerce_product_count', $stats['total_products'], true);
-        $order->add_meta_data('_shopcommerce_brands', implode(', ', $stats['brands']), true);
-        $order->add_meta_data('_shopcommerce_total_value', $stats['total_value'], true);
-        $order->add_meta_data('_shopcommerce_total_quantity', $stats['total_quantity'], true);
-
-        // Save the metadata
-        $order->save();
-
         $logger = isset($GLOBALS['shopcommerce_logger']) ? $GLOBALS['shopcommerce_logger'] : null;
 
-        $log_message = sprintf(
-            'Order %d created with %d external provider product(s)',
-            $order_id,
-            $stats['total_products']
-        );
-
-        $log_context = [
-            'order_id' => $order_id,
-            'order_number' => $order->get_order_number(),
-            'order_status' => $order->get_status(),
-            'customer_id' => $order->get_customer_id(),
-            'external_stats' => $stats,
-        ];
-
         if ($logger) {
+            $log_message = sprintf(
+                'Order %d created with %d external provider product(s)',
+                $order_id,
+                $stats['total_products']
+            );
+
+            $log_context = [
+                'order_id' => $order_id,
+                'order_number' => $order->get_order_number(),
+                'order_status' => $order->get_status(),
+                'customer_id' => $order->get_customer_id(),
+                'external_stats' => $stats,
+            ];
+
             $logger->info($log_message, $log_context);
 
             $logger->log_activity(
@@ -308,11 +297,10 @@ function shopcommerce_handle_order_creation($order_id) {
                     'total_quantity' => $stats['total_quantity'],
                 ]
             );
-        } else {
-            error_log('[ShopCommerce] ' . $log_message . ' | Context: ' . json_encode($log_context));
         }
     }
 }
+
 
 /**
  * Get orders with external provider products
@@ -323,6 +311,33 @@ function shopcommerce_handle_order_creation($order_id) {
 function shopcommerce_get_orders_with_external_products($args = []) {
     $default_args = [
         'status' => ['completed', 'processing'],
+        'limit' => -1,
+        'return' => 'objects',
+    ];
+
+    $args = wp_parse_args($args, $default_args);
+
+    $orders = wc_get_orders($args);
+    $orders_with_external = [];
+
+    foreach ($orders as $order) {
+        if (shopcommerce_order_has_external_provider_products($order)) {
+            $orders_with_external[] = $order;
+        }
+    }
+
+    return $orders_with_external;
+}
+
+/**
+ * Get orders with external provider products that are not completed
+ *
+ * @param array $args Query arguments for WP_Query
+ * @return array Array of order objects with external provider products that are not completed
+ */
+function shopcommerce_get_incomplete_orders_with_external_products($args = []) {
+    $default_args = [
+        'status' => ['pending', 'processing', 'on-hold', 'failed', 'cancelled'],
         'limit' => -1,
         'return' => 'objects',
     ];

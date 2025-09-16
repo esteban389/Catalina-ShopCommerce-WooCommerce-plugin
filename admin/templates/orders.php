@@ -35,6 +35,96 @@ if (!defined('ABSPATH')) {
 
     <div class="orders-section">
         <div class="section-header">
+            <h2>Incomplete Orders with External Products</h2>
+            <div class="header-actions">
+                <button type="button" class="button button-secondary" id="refresh-incomplete-orders-btn">
+                    <span class="dashicons dashicons-update"></span> Refresh
+                </button>
+            </div>
+        </div>
+
+        <!-- Incomplete Orders Filters -->
+        <div class="filters-container">
+            <div class="filter-group">
+                <label for="search-incomplete-orders">Search:</label>
+                <input type="text" id="search-incomplete-orders" class="regular-text" placeholder="Search by order # or customer...">
+            </div>
+            <div class="filter-group">
+                <label for="filter-incomplete-status">Status:</label>
+                <select id="filter-incomplete-status">
+                    <option value="">All Statuses</option>
+                    <option value="pending">Pending</option>
+                    <option value="processing">Processing</option>
+                    <option value="on-hold">On Hold</option>
+                    <option value="failed">Failed</option>
+                    <option value="cancelled">Cancelled</option>
+                </select>
+            </div>
+            <div class="filter-group">
+                <label for="filter-incomplete-brand">Brand:</label>
+                <select id="filter-incomplete-brand">
+                    <option value="">All Brands</option>
+                    <option value="HP">HP</option>
+                    <option value="DELL">DELL</option>
+                    <option value="LENOVO">LENOVO</option>
+                    <option value="APPLE">APPLE</option>
+                    <option value="ASUS">ASUS</option>
+                    <option value="BOSE">BOSE</option>
+                    <option value="EPSON">EPSON</option>
+                    <option value="JBL">JBL</option>
+                </select>
+            </div>
+            <div class="filter-group">
+                <label for="incomplete-per-page">Per Page:</label>
+                <select id="incomplete-per-page">
+                    <option value="10">10</option>
+                    <option value="20" selected>20</option>
+                    <option value="50">50</option>
+                </select>
+            </div>
+            <div class="filter-group">
+                <button type="button" class="button" id="apply-incomplete-filters-btn">Apply Filters</button>
+                <button type="button" class="button button-secondary" id="clear-incomplete-filters-btn">Clear</button>
+            </div>
+        </div>
+
+        <!-- Incomplete Orders Table -->
+        <div class="orders-table-container">
+            <table class="wp-list-table widefat fixed striped incomplete-orders-table">
+                <thead>
+                    <tr>
+                        <th scope="col" class="order-number">Order #</th>
+                        <th scope="col" class="customer">Customer</th>
+                        <th scope="col" class="date">Date</th>
+                        <th scope="col" class="status">Status</th>
+                        <th scope="col" class="brands">Brands</th>
+                        <th scope="col" class="products">Products</th>
+                        <th scope="col" class="total">Total</th>
+                        <th scope="col" class="actions">Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="incomplete-orders-tbody">
+                    <tr>
+                        <td colspan="8" class="text-center">
+                            <div class="loading-orders">
+                                <span class="spinner is-active"></span>
+                                <p>Loading incomplete orders...</p>
+                            </div>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Incomplete Orders Pagination -->
+        <div class="pagination-container">
+            <div class="pagination-info" id="incomplete-pagination-info">-</div>
+            <div class="pagination-links" id="incomplete-pagination-links"></div>
+        </div>
+    </div>
+
+    <div class="orders-section">
+        <div class="section-header">
             <h2>Orders with ShopCommerce Products</h2>
             <div class="header-actions">
                 <button type="button" class="button button-secondary" id="refresh-orders-btn">
@@ -547,8 +637,153 @@ jQuery(document).ready(function($) {
         per_page: 20
     };
 
+    let currentIncompletePage = 1;
+    let currentIncompleteFilters = {
+        search: '',
+        status: '',
+        brand: '',
+        per_page: 20
+    };
+
     // Load orders on page load
     loadOrders();
+    loadIncompleteOrders();
+
+    // Load incomplete orders function
+    function loadIncompleteOrders(page = 1) {
+        currentIncompletePage = page;
+
+        $('#incomplete-orders-tbody').html(`
+            <tr>
+                <td colspan="8" class="text-center">
+                    <div class="loading-orders">
+                        <span class="spinner is-active"></span>
+                        <p>Loading incomplete orders...</p>
+                    </div>
+                </td>
+            </tr>
+        `);
+
+        $.ajax({
+            url: shopcommerce_admin.ajax_url,
+            type: 'POST',
+            data: {
+                action: 'shopcommerce_get_incomplete_orders',
+                nonce: shopcommerce_admin.nonce,
+                page: currentIncompletePage,
+                search: currentIncompleteFilters.search,
+                status: currentIncompleteFilters.status,
+                brand: currentIncompleteFilters.brand,
+                per_page: currentIncompleteFilters.per_page
+            },
+            success: function(response) {
+                if (response.success) {
+                    displayIncompleteOrders(response.data.orders);
+                    displayIncompletePagination(response.data);
+                } else {
+                    displayIncompleteError('Failed to load incomplete orders');
+                }
+            },
+            error: function() {
+                displayIncompleteError('Network error while loading incomplete orders');
+            }
+        });
+    }
+
+    // Display incomplete orders in table
+    function displayIncompleteOrders(orders) {
+        let tbody = $('#incomplete-orders-tbody');
+
+        if (orders.length === 0) {
+            tbody.html(`
+                <tr>
+                    <td colspan="8" class="text-center">
+                        <p>No incomplete orders with external products found.</p>
+                    </td>
+                </tr>
+            `);
+            return;
+        }
+
+        let html = '';
+        orders.forEach(function(order) {
+            let statusClass = 'status-' + order.status;
+            let brands = order.brands || 'N/A';
+
+            html += `
+                <tr>
+                    <td class="order-number">
+                        <a href="#" class="view-incomplete-order-details" data-order-id="${order.id}">
+                            #${order.order_number}
+                        </a>
+                    </td>
+                    <td class="customer">${order.customer}</td>
+                    <td class="date">${order.formatted_date}</td>
+                    <td class="status">
+                        <span class="status-badge ${statusClass}">${order.status_label}</span>
+                    </td>
+                    <td class="brands">${brands}</td>
+                    <td class="products">${order.product_count || 0}</td>
+                    <td class="total">${order.formatted_total}</td>
+                    <td class="actions">
+                        <button type="button" class="button button-small view-incomplete-order-details" data-order-id="${order.id}">
+                            View
+                        </button>
+                    </td>
+                </tr>
+            `;
+        });
+
+        tbody.html(html);
+
+        // Attach click handlers
+        $('.view-incomplete-order-details').on('click', function(e) {
+            e.preventDefault();
+            let orderId = $(this).data('order-id');
+            viewOrderDetails(orderId);
+        });
+    }
+
+    // Display incomplete orders pagination
+    function displayIncompletePagination(data) {
+        $('#incomplete-pagination-info').text(data.showing_items);
+
+        let links = $('#incomplete-pagination-links');
+        links.html('');
+
+        // Previous button
+        if (data.current_page > 1) {
+            links.append(`<button type="button" class="button" data-page="${data.current_page - 1}">‹ Previous</button>`);
+        }
+
+        // Page numbers
+        for (let i = 1; i <= data.total_pages; i++) {
+            let active = i === data.current_page ? 'button-primary' : '';
+            links.append(`<button type="button" class="button ${active}" data-page="${i}">${i}</button>`);
+        }
+
+        // Next button
+        if (data.current_page < data.total_pages) {
+            links.append(`<button type="button" class="button" data-page="${data.current_page + 1}">Next ›</button>`);
+        }
+
+        // Attach click handlers
+        $('#incomplete-pagination-links button').on('click', function() {
+            let page = $(this).data('page');
+            loadIncompleteOrders(page);
+        });
+    }
+
+    // Display incomplete orders error
+    function displayIncompleteError(message) {
+        $('#incomplete-orders-tbody').html(`
+            <tr>
+                <td colspan="8" class="text-center">
+                    <p class="text-muted">${message}</p>
+                </td>
+            </tr>
+        `);
+    }
 
     // Load orders function
     function loadOrders(page = 1) {
@@ -879,6 +1114,10 @@ jQuery(document).ready(function($) {
     }
 
     // Event handlers
+    $('#refresh-incomplete-orders-btn').on('click', function() {
+        loadIncompleteOrders(currentIncompletePage);
+    });
+
     $('#refresh-orders-btn').on('click', function() {
         loadOrders(currentPage);
     });
@@ -905,10 +1144,40 @@ jQuery(document).ready(function($) {
         loadOrders(1);
     });
 
+    // Incomplete orders filter handlers
+    $('#apply-incomplete-filters-btn').on('click', function() {
+        currentIncompleteFilters.search = $('#search-incomplete-orders').val();
+        currentIncompleteFilters.status = $('#filter-incomplete-status').val();
+        currentIncompleteFilters.brand = $('#filter-incomplete-brand').val();
+        currentIncompleteFilters.per_page = parseInt($('#incomplete-per-page').val());
+        loadIncompleteOrders(1);
+    });
+
+    $('#clear-incomplete-filters-btn').on('click', function() {
+        $('#search-incomplete-orders').val('');
+        $('#filter-incomplete-status').val('');
+        $('#filter-incomplete-brand').val('');
+        $('#incomplete-per-page').val('20');
+        currentIncompleteFilters = {
+            search: '',
+            status: '',
+            brand: '',
+            per_page: 20
+        };
+        loadIncompleteOrders(1);
+    });
+
     // Enter key for search
     $('#search-orders').on('keypress', function(e) {
         if (e.which === 13) {
             $('#apply-filters-btn').click();
+        }
+    });
+
+    // Enter key for incomplete orders search
+    $('#search-incomplete-orders').on('keypress', function(e) {
+        if (e.which === 13) {
+            $('#apply-incomplete-filters-btn').click();
         }
     });
 

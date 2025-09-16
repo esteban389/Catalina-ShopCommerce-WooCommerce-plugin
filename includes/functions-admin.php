@@ -316,6 +316,7 @@ function shopcommerce_register_ajax_handlers() {
     add_action('wp_ajax_shopcommerce_get_orders', 'shopcommerce_ajax_get_orders');
     add_action('wp_ajax_shopcommerce_get_order_details', 'shopcommerce_ajax_get_order_details');
     add_action('wp_ajax_shopcommerce_update_existing_orders_metadata', 'shopcommerce_ajax_update_existing_orders_metadata');
+    add_action('wp_ajax_shopcommerce_get_incomplete_orders', 'shopcommerce_ajax_get_incomplete_orders');
 }
 add_action('admin_init', 'shopcommerce_register_ajax_handlers');
 
@@ -1721,4 +1722,104 @@ function shopcommerce_ajax_update_existing_orders_metadata() {
     } catch (Exception $e) {
         wp_send_json_error(['message' => 'Error updating orders: ' . $e->getMessage()]);
     }
+}
+
+/**
+ * AJAX handler for getting incomplete orders with external provider products
+ */
+function shopcommerce_ajax_get_incomplete_orders() {
+    check_ajax_referer('shopcommerce_admin_nonce', 'nonce');
+
+    if (!current_user_can('manage_options')) {
+        wp_send_json_error(['message' => 'Insufficient permissions']);
+    }
+
+    $page = isset($_POST['page']) ? max(1, intval($_POST['page'])) : 1;
+    $search = isset($_POST['search']) ? sanitize_text_field($_POST['search']) : '';
+    $status_filter = isset($_POST['status']) ? sanitize_text_field($_POST['status']) : '';
+    $brand_filter = isset($_POST['brand']) ? sanitize_text_field($_POST['brand']) : '';
+    $per_page = isset($_POST['per_page']) ? min(50, max(1, intval($_POST['per_page']))) : 20;
+
+    $args = [
+        'limit' => $per_page,
+        'page' => $page,
+        'return' => 'objects',
+    ];
+
+    // Add status filter
+    if (!empty($status_filter)) {
+        $args['status'] = $status_filter;
+    }
+
+    // Get incomplete orders with external provider products
+    $orders = shopcommerce_get_incomplete_orders_with_external_products($args);
+    $orders_data = [];
+
+    foreach ($orders as $order) {
+        $customer = $order->get_formatted_billing_full_name();
+
+        // Apply search filter if provided
+        if (!empty($search)) {
+            $search_lower = strtolower($search);
+            $order_number = strtolower($order->get_order_number());
+            $customer_lower = strtolower($customer);
+
+            if (strpos($order_number, $search_lower) === false &&
+                strpos($customer_lower, $search_lower) === false) {
+                continue;
+            }
+        }
+
+        // Get external products for brand filtering
+        $external_products = shopcommerce_get_external_provider_products_from_order($order);
+        $brands = array_unique(array_column($external_products, 'external_provider_brand'));
+
+        // Apply brand filter if provided
+        if (!empty($brand_filter)) {
+            $brand_found = false;
+            foreach ($brands as $brand) {
+                if (strtolower($brand) === strtolower($brand_filter)) {
+                    $brand_found = true;
+                    break;
+                }
+            }
+            if (!$brand_found) {
+                continue;
+            }
+        }
+
+        $orders_data[] = [
+            'id' => $order->get_id(),
+            'order_number' => $order->get_order_number(),
+            'status' => $order->get_status(),
+            'status_label' => ucfirst($order->get_status()),
+            'customer' => $customer,
+            'date_created' => $order->get_date_created()->format('Y-m-d H:i:s'),
+            'formatted_date' => date_i18n('M j, Y g:i A', $order->get_date_created()->getTimestamp()),
+            'total' => $order->get_total(),
+            'formatted_total' => wc_price($order->get_total()),
+            'external_product_count' => count($external_products),
+            'brands' => !empty($brands) ? implode(', ', $brands) : 'N/A',
+        ];
+    }
+
+    // Get total count for pagination
+    $total_orders = count($orders_data);
+    $total_pages = max(1, ceil($total_orders / $per_page));
+    $start_item = ($page - 1) * $per_page + 1;
+    $end_item = min($page * $per_page, $total_orders);
+
+    wp_send_json_success([
+        'orders' => $orders_data,
+        'current_page' => $page,
+        'total_pages' => $total_pages,
+        'total_orders' => $total_orders,
+        'per_page' => $per_page,
+        'showing_items' => $total_orders > 0 ? sprintf(
+            'Showing %d-%d of %d orders',
+            $start_item,
+            $end_item,
+            $total_orders
+        ) : 'No orders to display'
+    ]);
 }
