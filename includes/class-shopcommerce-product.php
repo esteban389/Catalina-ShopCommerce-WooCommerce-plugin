@@ -115,6 +115,31 @@ class ShopCommerce_Product {
 
         // Try multiple methods to find duplicates
         $methods = [
+            'wp_query' => function($sku) {
+                // Normalize SKU (trim, uppercase for comparison)
+                $normalized_sku = trim(strtoupper($sku));
+
+                // Method 1: Direct SKU match
+                $args = [
+                    'post_type' => 'product',
+                    'post_status' => 'any',
+                    'meta_query' => [
+                        [
+                            'key' => '_sku',
+                            'value' => $normalized_sku,
+                            'compare' => '='
+                        ]
+                    ],
+                    'posts_per_page' => 1
+                ];
+
+                $query = new WP_Query($args);
+
+                if ($query->have_posts()) {
+                    $post = $query->posts[0];
+                    return $post->ID;
+                }
+            },
             'wc_sku' => function($sku) {
                 return wc_get_product_id_by_sku($sku);
             },
