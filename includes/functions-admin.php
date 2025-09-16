@@ -591,7 +591,10 @@ function shopcommerce_ajax_manage_products() {
         'errors' => []
     ];
 
-    foreach ($product_ids as $product_id) {
+    // For single product, use WordPress functions, for multiple use mass operations
+    if (count($product_ids) === 1) {
+        // Single product - use standard WordPress functions
+        $product_id = $product_ids[0];
         try {
             switch ($product_action) {
                 case 'trash':
@@ -615,15 +618,115 @@ function shopcommerce_ajax_manage_products() {
             }
 
             if ($result !== false && !is_wp_error($result)) {
-                $results['success']++;
+                $results['success'] = 1;
             } else {
-                $results['failed']++;
+                $results['failed'] = 1;
                 if (is_wp_error($result)) {
                     $results['errors'][] = $result->get_error_message();
                 }
             }
         } catch (Exception $e) {
-            $results['failed']++;
+            $results['failed'] = 1;
+            $results['errors'][] = $e->getMessage();
+        }
+    } else {
+        // Multiple products - use mass operations
+        global $wpdb;
+
+        try {
+            switch ($product_action) {
+                case 'trash':
+                    // Use mass trash operation
+                    foreach ($product_ids as $product_id) {
+                        $result = wp_trash_post($product_id);
+                        if ($result !== false && !is_wp_error($result)) {
+                            $results['success']++;
+                        } else {
+                            $results['failed']++;
+                            if (is_wp_error($result)) {
+                                $results['errors'][] = $result->get_error_message();
+                            }
+                        }
+                    }
+                    break;
+
+                case 'delete':
+                    // Use mass delete operation
+                    $product_ids_string = implode(',', array_fill(0, count($product_ids), '%d'));
+
+                    // Delete all post meta for these products
+                    $wpdb->query($wpdb->prepare(
+                        "DELETE FROM {$wpdb->postmeta} WHERE post_id IN ($product_ids_string)",
+                        $product_ids
+                    ));
+
+                    // Delete term relationships
+                    $wpdb->query($wpdb->prepare(
+                        "DELETE FROM {$wpdb->term_relationships} WHERE object_id IN ($product_ids_string)",
+                        $product_ids
+                    ));
+
+                    // Delete the posts
+                    $delete_result = $wpdb->query($wpdb->prepare(
+                        "DELETE FROM {$wpdb->posts} WHERE ID IN ($product_ids_string) AND post_type = 'product'",
+                        $product_ids
+                    ));
+
+                    if ($delete_result !== false) {
+                        $results['success'] = $delete_result;
+                        // Clear post cache
+                        foreach ($product_ids as $product_id) {
+                            clean_post_cache($product_id);
+                        }
+                    } else {
+                        $results['failed'] = count($product_ids);
+                        $results['errors'][] = 'Database error during deletion';
+                    }
+                    break;
+
+                case 'publish':
+                    // Use mass publish operation
+                    $update_data = ['post_status' => 'publish'];
+                    $update_where = ['ID' => $product_ids, 'post_type' => 'product'];
+                    $update_result = $wpdb->update($wpdb->posts, $update_data, $update_where, ['%s'], ['%d', '%s']);
+
+                    if ($update_result !== false) {
+                        $results['success'] = $update_result;
+                        // Clear cache for updated posts
+                        foreach ($product_ids as $product_id) {
+                            clean_post_cache($product_id);
+                        }
+                    } else {
+                        $results['failed'] = count($product_ids);
+                        $results['errors'][] = 'Database error during publish';
+                    }
+                    break;
+
+                case 'draft':
+                    // Use mass draft operation
+                    $update_data = ['post_status' => 'draft'];
+                    $update_where = ['ID' => $product_ids, 'post_type' => 'product'];
+                    $update_result = $wpdb->update($wpdb->posts, $update_data, $update_where, ['%s'], ['%d', '%s']);
+
+                    if ($update_result !== false) {
+                        $results['success'] = $update_result;
+                        // Clear cache for updated posts
+                        foreach ($product_ids as $product_id) {
+                            clean_post_cache($product_id);
+                        }
+                    } else {
+                        $results['failed'] = count($product_ids);
+                        $results['errors'][] = 'Database error during draft update';
+                    }
+                    break;
+
+                default:
+                    $results['failed'] = count($product_ids);
+                    $results['errors'][] = "Invalid action: $product_action";
+                    break;
+            }
+        } catch (Exception $e) {
+            $results['failed'] = count($product_ids);
             $results['errors'][] = $e->getMessage();
         }
     }
@@ -667,41 +770,102 @@ function shopcommerce_ajax_bulk_products() {
         'errors' => []
     ];
 
-    foreach ($product_ids as $product_id) {
-        try {
-            switch ($bulk_action) {
-                case 'trash':
+    try {
+        switch ($bulk_action) {
+            case 'trash':
+                // Use mass trash operation
+                foreach ($product_ids as $product_id) {
                     $result = wp_trash_post($product_id);
-                    break;
-                case 'delete':
-                    $result = wp_delete_post($product_id, true);
-                    break;
-                case 'publish':
-                    $result = wp_publish_post($product_id);
-                    break;
-                case 'draft':
-                    $post = get_post($product_id);
-                    $post->post_status = 'draft';
-                    $result = wp_update_post($post);
-                    break;
-                default:
-                    $result = false;
-                    $results['errors'][] = "Invalid bulk action: $bulk_action";
-                    break;
-            }
-
-            if ($result !== false && !is_wp_error($result)) {
-                $results['success']++;
-            } else {
-                $results['failed']++;
-                if (is_wp_error($result)) {
-                    $results['errors'][] = $result->get_error_message();
+                    if ($result !== false && !is_wp_error($result)) {
+                        $results['success']++;
+                    } else {
+                        $results['failed']++;
+                        if (is_wp_error($result)) {
+                            $results['errors'][] = $result->get_error_message();
+                        }
+                    }
                 }
-            }
-        } catch (Exception $e) {
-            $results['failed']++;
-            $results['errors'][] = $e->getMessage();
+                break;
+
+            case 'delete':
+                // Use mass delete operation - direct database query for better performance
+                global $wpdb;
+
+                // First, delete all post meta for these products
+                $product_ids_string = implode(',', array_fill(0, count($product_ids), '%d'));
+                $wpdb->query($wpdb->prepare(
+                    "DELETE FROM {$wpdb->postmeta} WHERE post_id IN ($product_ids_string)",
+                    $product_ids
+                ));
+
+                // Delete term relationships
+                $wpdb->query($wpdb->prepare(
+                    "DELETE FROM {$wpdb->term_relationships} WHERE object_id IN ($product_ids_string)",
+                    $product_ids
+                ));
+
+                // Delete the posts
+                $delete_result = $wpdb->query($wpdb->prepare(
+                    "DELETE FROM {$wpdb->posts} WHERE ID IN ($product_ids_string) AND post_type = 'product'",
+                    $product_ids
+                ));
+
+                if ($delete_result !== false) {
+                    $results['success'] = $delete_result;
+                    // Clear post cache
+                    foreach ($product_ids as $product_id) {
+                        clean_post_cache($product_id);
+                    }
+                } else {
+                    $results['failed'] = count($product_ids);
+                    $results['errors'][] = 'Database error during deletion';
+                }
+                break;
+
+            case 'publish':
+                // Use mass publish operation
+                $update_data = ['post_status' => 'publish'];
+                $update_where = ['ID' => $product_ids, 'post_type' => 'product'];
+                $update_result = $wpdb->update($wpdb->posts, $update_data, $update_where, ['%s'], ['%d', '%s']);
+
+                if ($update_result !== false) {
+                    $results['success'] = $update_result;
+                    // Clear cache for updated posts
+                    foreach ($product_ids as $product_id) {
+                        clean_post_cache($product_id);
+                    }
+                } else {
+                    $results['failed'] = count($product_ids);
+                    $results['errors'][] = 'Database error during publish';
+                }
+                break;
+
+            case 'draft':
+                // Use mass draft operation
+                $update_data = ['post_status' => 'draft'];
+                $update_where = ['ID' => $product_ids, 'post_type' => 'product'];
+                $update_result = $wpdb->update($wpdb->posts, $update_data, $update_where, ['%s'], ['%d', '%s']);
+
+                if ($update_result !== false) {
+                    $results['success'] = $update_result;
+                    // Clear cache for updated posts
+                    foreach ($product_ids as $product_id) {
+                        clean_post_cache($product_id);
+                    }
+                } else {
+                    $results['failed'] = count($product_ids);
+                    $results['errors'][] = 'Database error during draft update';
+                }
+                break;
+
+            default:
+                $results['failed'] = count($product_ids);
+                $results['errors'][] = "Invalid bulk action: $bulk_action";
+                break;
         }
+    } catch (Exception $e) {
+        $results['failed'] = count($product_ids);
+        $results['errors'][] = $e->getMessage();
     }
 
     $message = sprintf(
