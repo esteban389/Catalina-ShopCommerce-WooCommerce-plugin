@@ -51,8 +51,14 @@ $brands = $helpers ? $helpers->get_external_provider_brands() : [];
 ?>
 
 <div class="wrap shopcommerce-admin">
+    <?php wp_nonce_field('shopcommerce_products_management', 'products_nonce'); ?>
     <h1 class="wp-heading-inline">ShopCommerce Products</h1>
     <a href="<?php echo admin_url('admin.php?page=shopcommerce-sync'); ?>" class="page-title-action">Back to Dashboard</a>
+    <button type="button" id="cleanup-duplicates-btn" class="page-title-action" style="background-color: #dc3232; color: white; margin-left: 10px;">
+        <span class="dashicons dashicons-trash"></span>
+        Cleanup Duplicates
+    </button>
+    <span id="cleanup-spinner" class="spinner" style="float: none; margin-left: 10px; display: none;"></span>
     <hr class="wp-header-end">
 
     <!-- Search and Filters -->
@@ -468,6 +474,81 @@ jQuery(document).ready(function($) {
     // Handle page size change
     $('.page-size-select').on('change', function() {
         $('.page-size-form').submit();
+    });
+
+    // Handle duplicate cleanup
+    $('#cleanup-duplicates-btn').on('click', function() {
+        if (confirm('This will scan for and report duplicate products by SKU. Are you sure you want to continue?')) {
+            var $btn = $(this);
+            var $spinner = $('#cleanup-spinner');
+
+            $btn.prop('disabled', true);
+            $spinner.show();
+
+            var nonce = $('#products_nonce').val() || '';
+            $.ajax({
+                url: ajaxurl,
+                type: 'POST',
+                data: {
+                    action: 'shopcommerce_ajax_cleanup_duplicates',
+                    nonce: nonce,
+                    dry_run: true
+                },
+                success: function(response) {
+                    if (response.success) {
+                        var data = response.data;
+                        var message = 'Duplicate Product Analysis Results:\n\n';
+                        message += 'Total duplicate SKUs found: ' + data.total_duplicate_skus + '\n';
+
+                        if (data.duplicates_found.length > 0) {
+                            message += '\nDuplicates found:\n';
+                            data.duplicates_found.forEach(function(dup) {
+                                message += '• SKU: ' + dup.sku + ' (' + dup.remove_product_ids.length + ' duplicates)\n';
+                            });
+
+                            if (confirm(message + '\n\nWould you like to permanently remove the ' + (data.products_removed || 0) + ' duplicate products? This action cannot be undone.')) {
+                                // Perform actual cleanup
+                                $.ajax({
+                                    url: ajaxurl,
+                                    type: 'POST',
+                                    data: {
+                                        action: 'shopcommerce_ajax_cleanup_duplicates',
+                                        nonce: nonce,
+                                        dry_run: false
+                                    },
+                                    success: function(cleanupResponse) {
+                                        if (cleanupResponse.success) {
+                                            var cleanupData = cleanupResponse.data;
+                                            alert('Cleanup completed!\n\n' +
+                                                  'Products removed: ' + cleanupData.products_removed + '\n' +
+                                                  'Errors: ' + cleanupData.errors.length + '\n\n' +
+                                                  'Page will refresh to show updated results.');
+                                            location.reload();
+                                        } else {
+                                            alert('Cleanup failed: ' + cleanupResponse.data.message);
+                                        }
+                                    },
+                                    error: function() {
+                                        alert('Network error during cleanup.');
+                                    }
+                                });
+                            }
+                        } else {
+                            alert('No duplicate products found!');
+                        }
+                    } else {
+                        alert('Analysis failed: ' + response.data.message);
+                    }
+                },
+                error: function() {
+                    alert('Network error during duplicate analysis.');
+                },
+                complete: function() {
+                    $btn.prop('disabled', false);
+                    $spinner.hide();
+                }
+            });
+        }
     });
 });
 </script>

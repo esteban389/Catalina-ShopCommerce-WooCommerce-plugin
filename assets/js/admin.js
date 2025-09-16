@@ -135,14 +135,55 @@
      * Initialize UI components
      */
     function initUIComponents() {
-        // Initialize tooltips
-        $('.help-tip').tooltip({
-            position: {
-                my: 'center bottom-10',
-                at: 'center top'
-            },
-            tooltipClass: 'shopcommerce-tooltip'
-        });
+        // Initialize tooltips only if jQuery UI tooltip is available
+        if (typeof $.fn.tooltip === 'function') {
+            $('.help-tip').tooltip({
+                position: {
+                    my: 'center bottom-10',
+                    at: 'center top'
+                },
+                tooltipClass: 'shopcommerce-tooltip'
+            });
+        } else {
+            // Fallback: use title attributes or simple hover tooltips
+            $('.help-tip').each(function() {
+                var $tip = $(this);
+                var title = $tip.attr('title');
+                if (title) {
+                    $tip.on('mouseenter', function() {
+                        var $tooltip = $('<div class="shopcommerce-simple-tooltip"></div>')
+                            .text(title)
+                            .css({
+                                'position': 'absolute',
+                                'background': '#333',
+                                'color': '#fff',
+                                'padding': '5px 10px',
+                                'border-radius': '3px',
+                                'font-size': '12px',
+                                'z-index': '9999',
+                                'display': 'none'
+                            });
+
+                        $('body').append($tooltip);
+
+                        var position = $tip.offset();
+                        $tooltip.css({
+                            'top': position.top - 30,
+                            'left': position.left
+                        }).fadeIn(200);
+
+                        $tip.data('tooltip', $tooltip);
+                    }).on('mouseleave', function() {
+                        var $tooltip = $tip.data('tooltip');
+                        if ($tooltip) {
+                            $tooltip.fadeOut(200, function() {
+                                $(this).remove();
+                            });
+                        }
+                    });
+                }
+            });
+        }
 
         // Initialize confirm dialogs
         $('.confirm-action').on('click', function(e) {

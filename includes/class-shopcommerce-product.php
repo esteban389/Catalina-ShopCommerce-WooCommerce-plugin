@@ -64,16 +64,26 @@ class ShopCommerce_Product {
                 'brand' => $brand
             ]);
 
-            // Check if product exists
-            $existing_product = $this->helpers->get_product_by_sku($sku);
+            // Enhanced duplicate prevention
+            $duplicate_check = $this->check_for_duplicates($sku);
+            if ($duplicate_check['found']) {
+                $this->logger->info('Duplicate product detected, will update', [
+                    'sku' => $sku,
+                    'existing_product_id' => $duplicate_check['product_id'],
+                    'method' => $duplicate_check['method']
+                ]);
 
-            if ($existing_product) {
                 // Update existing product
-                $results = $this->update_product($existing_product, $sanitized_data, $brand);
-                $results['action'] = 'updated';
+                $existing_product = wc_get_product($duplicate_check['product_id']);
+                if ($existing_product) {
+                    $results = $this->update_product($existing_product, $sanitized_data, $brand);
+                    $results['action'] = 'updated';
+                } else {
+                    throw new Exception('Found duplicate reference but product object is invalid');
+                }
             } else {
-                // Create new product
-                $results = $this->create_product($sanitized_data, $brand);
+                // Create new product with additional safety checks
+                $results = $this->create_product_safely($sanitized_data, $brand);
                 $results['action'] = 'created';
             }
 
@@ -90,6 +100,126 @@ class ShopCommerce_Product {
         }
 
         return $results;
+    }
+
+    /**
+     * Enhanced duplicate detection for products
+     *
+     * @param string $sku Product SKU to check
+     * @return array Duplicate check results
+     */
+    private function check_for_duplicates($sku) {
+        if (empty($sku)) {
+            return ['found' => false, 'product_id' => null, 'method' => null];
+        }
+
+        // Try multiple methods to find duplicates
+        $methods = [
+            'wc_sku' => function($sku) {
+                return wc_get_product_id_by_sku($sku);
+            },
+            'db_sku' => function($sku) {
+                global $wpdb;
+                $normalized_sku = trim(strtoupper($sku));
+                return $wpdb->get_var($wpdb->prepare(
+                    "SELECT post_id FROM {$wpdb->postmeta}
+                     WHERE meta_key = '_sku' AND UPPER(TRIM(meta_value)) = %s
+                     LIMIT 1",
+                    $normalized_sku
+                ));
+            },
+            'shopcommerce_sku' => function($sku) {
+                global $wpdb;
+                $normalized_sku = trim(strtoupper($sku));
+                return $wpdb->get_var($wpdb->prepare(
+                    "SELECT post_id FROM {$wpdb->postmeta}
+                     WHERE meta_key = '_shopcommerce_sku' AND UPPER(TRIM(meta_value)) = %s
+                     LIMIT 1",
+                    $normalized_sku
+                ));
+            },
+            'external_provider_sku' => function($sku) {
+                global $wpdb;
+                $normalized_sku = trim(strtoupper($sku));
+                return $wpdb->get_var($wpdb->prepare(
+                    "SELECT pm.post_id
+                     FROM {$wpdb->postmeta} pm
+                     INNER JOIN {$wpdb->postmeta} pm2 ON pm.post_id = pm2.post_id
+                     WHERE pm.meta_key = '_sku' AND UPPER(TRIM(pm.meta_value)) = %s
+                     AND pm2.meta_key = '_external_provider' AND pm2.meta_value = 'shopcommerce'
+                     LIMIT 1",
+                    $normalized_sku
+                ));
+            }
+        ];
+
+        foreach ($methods as $method_name => $method) {
+            try {
+                $product_id = $method($sku);
+                if ($product_id && $product_id > 0) {
+                    // Verify the product still exists and is a valid product
+                    $product = wc_get_product($product_id);
+                    if ($product && !is_wp_error($product)) {
+                        $this->logger->debug('Duplicate found using method', [
+                            'method' => $method_name,
+                            'sku' => $sku,
+                            'product_id' => $product_id
+                        ]);
+                        return [
+                            'found' => true,
+                            'product_id' => $product_id,
+                            'method' => $method_name
+                        ];
+                    }
+                }
+            } catch (Exception $e) {
+                $this->logger->warning('Error checking duplicates with method', [
+                    'method' => $method_name,
+                    'sku' => $sku,
+                    'error' => $e->getMessage()
+                ]);
+                continue;
+            }
+        }
+
+        return ['found' => false, 'product_id' => null, 'method' => null];
+    }
+
+    /**
+     * Create product with enhanced duplicate prevention
+     *
+     * @param array $product_data Sanitized product data
+     * @param string $brand Brand name
+     * @return array Creation results
+     */
+    private function create_product_safely($product_data, $brand) {
+        $results = [
+            'success' => false,
+            'product_id' => null,
+            'error' => null,
+        ];
+
+        // Double-check for duplicates one more time before creation
+        $sku = $product_data['Sku'];
+        if (!empty($sku)) {
+            $final_check = $this->check_for_duplicates($sku);
+            if ($final_check['found']) {
+                $this->logger->warning('Duplicate detected during final pre-creation check', [
+                    'sku' => $sku,
+                    'existing_product_id' => $final_check['product_id']
+                ]);
+
+                // Update the existing product instead
+                $existing_product = wc_get_product($final_check['product_id']);
+                if ($existing_product) {
+                    $update_result = $this->update_product($existing_product, $product_data, $brand);
+                    $update_result['action'] = 'updated';
+                    return $update_result;
+                }
+            }
+        }
+
+        return $this->create_product($product_data, $brand);
     }
 
     /**
@@ -167,23 +297,66 @@ class ShopCommerce_Product {
             'error' => null,
         ];
 
+        if (!$existing_product || !is_a($existing_product, 'WC_Product')) {
+            throw new Exception('Invalid product object provided for update');
+        }
+
         $product_id = $existing_product->get_id();
+        $sku = $product_data['Sku'];
+
+        // Log update attempt
+        $this->logger->info('Starting product update', [
+            'product_id' => $product_id,
+            'sku' => $sku,
+            'current_sku' => $existing_product->get_sku(),
+            'name' => $product_data['Name'],
+            'brand' => $brand
+        ]);
 
         // Get mapped data
-        $mapped_data = $this->map_product_data($product_data, $brand, $product_data['Sku']);
+        $mapped_data = $this->map_product_data($product_data, $brand, $sku);
+
+        // Verify this is the right product by double-checking SKUs
+        $current_sku = $existing_product->get_sku();
+        $external_sku = get_post_meta($product_id, '_shopcommerce_sku', true);
+
+        if (!empty($sku)) {
+            $skus_match = (
+                $current_sku === $sku ||
+                $external_sku === $sku ||
+                trim(strtoupper($current_sku)) === trim(strtoupper($sku)) ||
+                trim(strtoupper($external_sku)) === trim(strtoupper($sku))
+            );
+
+            if (!$skus_match) {
+                $this->logger->warning('SKU mismatch during product update', [
+                    'product_id' => $product_id,
+                    'new_sku' => $sku,
+                    'current_sku' => $current_sku,
+                    'external_sku' => $external_sku
+                ]);
+            }
+        }
 
         // Apply the mapped data to existing product
         $this->apply_product_data($existing_product, $mapped_data, $product_data, $brand);
 
         // Save the updated product
-        $existing_product->save();
+        $save_result = $existing_product->save();
 
-        $this->logger->info('Updated product', [
-            'product_id' => $product_id,
-            'sku' => $product_data['Sku'],
-            'name' => $product_data['Name'],
-            'brand' => $brand
-        ]);
+        if ($save_result) {
+            $this->logger->info('Successfully updated product', [
+                'product_id' => $product_id,
+                'sku' => $sku,
+                'name' => $product_data['Name'],
+                'brand' => $brand
+            ]);
+        } else {
+            $this->logger->warning('Product save returned false during update', [
+                'product_id' => $product_id,
+                'sku' => $sku
+            ]);
+        }
 
         $results['success'] = true;
         $results['product_id'] = $product_id;
@@ -495,5 +668,112 @@ class ShopCommerce_Product {
                  AND pm2.meta_value < '{$seven_days_ago}'
              )"
         ));
+    }
+
+    /**
+     * Find and merge duplicate products by SKU
+     *
+     * @param bool $dry_run If true, only report duplicates without merging
+     * @return array Results of duplicate detection and merging
+     */
+    public function cleanup_duplicate_products($dry_run = true) {
+        $this->logger->info('Starting duplicate product cleanup', ['dry_run' => $dry_run]);
+
+        global $wpdb;
+
+        // Find potential duplicates by SKU
+        $duplicate_skus = $wpdb->get_col(
+            "SELECT meta_value
+             FROM {$wpdb->postmeta}
+             WHERE meta_key = '_sku'
+             AND meta_value != ''
+             GROUP BY meta_value
+             HAVING COUNT(DISTINCT post_id) > 1"
+        );
+
+        $results = [
+            'total_duplicate_skus' => count($duplicate_skus),
+            'duplicates_found' => [],
+            'products_merged' => 0,
+            'products_removed' => 0,
+            'errors' => []
+        ];
+
+        foreach ($duplicate_skus as $sku) {
+            try {
+                // Get all products with this SKU
+                $product_ids = $wpdb->get_col($wpdb->prepare(
+                    "SELECT post_id
+                     FROM {$wpdb->postmeta}
+                     WHERE meta_key = '_sku' AND meta_value = %s
+                     ORDER BY post_id ASC",
+                    $sku
+                ));
+
+                // Find the most recently synced product (keep this one)
+                $keep_product_id = null;
+                $remove_product_ids = [];
+
+                foreach ($product_ids as $product_id) {
+                    $sync_date = get_post_meta($product_id, '_external_provider_sync_date', true);
+                    if (!$sync_date || $sync_date > ($keep_product_id ? get_post_meta($keep_product_id, '_external_provider_sync_date', true) : '')) {
+                        if ($keep_product_id) {
+                            $remove_product_ids[] = $keep_product_id;
+                        }
+                        $keep_product_id = $product_id;
+                    } else {
+                        $remove_product_ids[] = $product_id;
+                    }
+                }
+
+                if ($keep_product_id && !empty($remove_product_ids)) {
+                    $duplicate_info = [
+                        'sku' => $sku,
+                        'keep_product_id' => $keep_product_id,
+                        'remove_product_ids' => $remove_product_ids,
+                        'keep_product_name' => get_the_title($keep_product_id),
+                        'remove_product_names' => array_map('get_the_title', $remove_product_ids)
+                    ];
+
+                    $results['duplicates_found'][] = $duplicate_info;
+
+                    $this->logger->warning('Found duplicate products', $duplicate_info);
+
+                    if (!$dry_run) {
+                        // Move to trash or permanently delete duplicate products
+                        foreach ($remove_product_ids as $remove_id) {
+                            $product = wc_get_product($remove_id);
+                            if ($product) {
+                                $result = $product->delete(true); // Force delete
+                                if ($result) {
+                                    $results['products_removed']++;
+                                    $this->logger->info('Removed duplicate product', [
+                                        'sku' => $sku,
+                                        'removed_id' => $remove_id,
+                                        'kept_id' => $keep_product_id
+                                    ]);
+                                } else {
+                                    $results['errors'][] = "Failed to delete product ID {$remove_id} for SKU {$sku}";
+                                }
+                            }
+                        }
+                    }
+                }
+            } catch (Exception $e) {
+                $results['errors'][] = "Error processing SKU {$sku}: " . $e->getMessage();
+                $this->logger->error('Error during duplicate cleanup', [
+                    'sku' => $sku,
+                    'error' => $e->getMessage()
+                ]);
+            }
+        }
+
+        $this->logger->info('Duplicate cleanup completed', [
+            'total_duplicates' => $results['total_duplicate_skus'],
+            'products_removed' => $results['products_removed'],
+            'errors_count' => count($results['errors'])
+        ]);
+
+        return $results;
     }
 }

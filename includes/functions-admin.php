@@ -100,11 +100,14 @@ function shopcommerce_admin_enqueue_scripts($hook) {
         SHOPCOMMERCE_SYNC_VERSION
     );
 
+    // Enqueue jQuery UI for tooltips
+    wp_enqueue_script('jquery-ui-tooltip');
+
     // Enqueue admin scripts
     wp_enqueue_script(
         'shopcommerce-admin',
         SHOPCOMMERCE_SYNC_ASSETS_DIR . 'js/admin.js',
-        ['jquery'],
+        ['jquery', 'jquery-ui-tooltip'],
         SHOPCOMMERCE_SYNC_VERSION,
         true
     );
@@ -275,6 +278,9 @@ function shopcommerce_register_ajax_handlers() {
     // Job management
     add_action('wp_ajax_shopcommerce_rebuild_jobs', 'shopcommerce_ajax_rebuild_jobs');
     add_action('wp_ajax_shopcommerce_get_sync_jobs', 'shopcommerce_ajax_get_sync_jobs');
+
+    // Duplicate product management
+    add_action('wp_ajax_shopcommerce_cleanup_duplicates', 'shopcommerce_ajax_cleanup_duplicates');
 
     // Manage products
     add_action('wp_ajax_shopcommerce_manage_products', 'shopcommerce_ajax_manage_products');
@@ -1221,4 +1227,29 @@ function shopcommerce_ajax_get_sync_jobs() {
         'jobs' => $jobs,
         'queue_status' => $queue_status
     ]);
+}
+
+/**
+ * AJAX handler for cleaning up duplicate products
+ */
+function shopcommerce_ajax_cleanup_duplicates() {
+    check_ajax_referer('shopcommerce_products_management', 'nonce');
+
+    if (!current_user_can('manage_options')) {
+        wp_send_json_error(['message' => 'Insufficient permissions']);
+    }
+
+    $product_handler = isset($GLOBALS['shopcommerce_product']) ? $GLOBALS['shopcommerce_product'] : null;
+    if (!$product_handler) {
+        wp_send_json_error(['message' => 'Product handler not available']);
+    }
+
+    $dry_run = isset($_POST['dry_run']) ? filter_var($_POST['dry_run'], FILTER_VALIDATE_BOOLEAN) : true;
+
+    try {
+        $results = $product_handler->cleanup_duplicate_products($dry_run);
+        wp_send_json_success($results);
+    } catch (Exception $e) {
+        wp_send_json_error(['message' => 'Error during cleanup: ' . $e->getMessage()]);
+    }
 }
