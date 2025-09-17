@@ -63,14 +63,14 @@ function shopcommerce_admin_menu() {
         'shopcommerce_sync_control_page'
     );
 
-    add_submenu_page(
+/*     add_submenu_page(
         'shopcommerce-sync',
         'Logs',
         'Logs',
         'manage_options',
         'shopcommerce-sync-logs',
         'shopcommerce_logs_page'
-    );
+    ); */
 
     add_submenu_page(
         'shopcommerce-sync',
@@ -81,14 +81,14 @@ function shopcommerce_admin_menu() {
         'shopcommerce_brands_page'
     );
 
-    add_submenu_page(
+/*     add_submenu_page(
         'shopcommerce-sync',
         'Settings',
         'Settings',
         'manage_options',
         'shopcommerce-sync-settings',
         'shopcommerce_settings_page'
-    );
+    ); */
 }
 add_action('admin_menu', 'shopcommerce_admin_menu');
 

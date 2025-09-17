@@ -329,7 +329,7 @@ class ShopCommerce_Logger {
         $log_line = json_encode($log_entry) . PHP_EOL;
 
         // Append to log file
-        file_put_contents($log_file, $log_line, FILE_APPEND);
+        //file_put_contents($log_file, $log_line, FILE_APPEND);
     }
 
     /**
