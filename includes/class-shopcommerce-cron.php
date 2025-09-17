@@ -39,11 +39,11 @@ class ShopCommerce_Cron {
     public function __construct($logger) {
         $this->logger = $logger;
 
+        // Register custom schedules IMMEDIATELY - this is crucial
+        add_filter('cron_schedules', [$this, 'register_cron_schedules']);
+        
         // Register the main cron action
         add_action(self::HOOK_NAME, [$this, 'execute_sync_hook']);
-
-        // Register custom cron schedules immediately on construction
-        add_filter('cron_schedules', [$this, 'register_cron_schedules']);
     }
 
     /**
@@ -52,11 +52,52 @@ class ShopCommerce_Cron {
     public function activate() {
         $this->logger->info('Activating ShopCommerce sync plugin');
 
-        // Initialize jobs
-        $this->initialize_jobs();
+        try {
+            // Ensure schedules are registered before scheduling
+            $this->force_register_schedules();
+            
+            // Initialize jobs first
+            $this->initialize_jobs();
 
-        // Schedule the main sync hook using the centralized method
-        $this->schedule_cron_event(self::DEFAULT_INTERVAL);
+            // Clear any existing schedules to ensure clean state
+            $this->clear_cron_event();
+            
+            // Schedule the main sync hook
+            $scheduled = $this->schedule_cron_event(self::DEFAULT_INTERVAL);
+            
+            if (!$scheduled) {
+                throw new Exception('Failed to schedule initial cron event');
+            }
+            
+            // Verify the schedule was created
+            $next_run = wp_next_scheduled(self::HOOK_NAME);
+            if (!$next_run) {
+                throw new Exception('Cron event was not actually scheduled');
+            }
+            
+            $this->logger->info('Activation completed successfully', [
+                'next_run' => date('Y-m-d H:i:s', $next_run)
+            ]);
+            
+        } catch (Exception $e) {
+            $this->logger->error('Activation failed', ['error' => $e->getMessage()]);
+            
+            // Store activation error for admin display
+            update_option('shopcommerce_activation_error', $e->getMessage(), false);
+        }
+    }
+
+    private function force_register_schedules() {
+        // Manually trigger the cron_schedules filter to ensure our schedules are registered
+        $schedules = wp_get_schedules();
+        $schedules = $this->register_cron_schedules($schedules);
+        
+        // This is a bit hacky but ensures schedules are available immediately
+        global $wp_filter;
+        if (isset($wp_filter['cron_schedules'])) {
+            // Force WordPress to re-evaluate schedules
+            wp_clear_scheduled_hook('__fake_hook_to_refresh_schedules__');
+        }
     }
 
     /**
@@ -82,8 +123,15 @@ class ShopCommerce_Cron {
             $timestamp = time();
         }
 
-        // Validate the interval
+        // Force refresh schedules
         $available_schedules = wp_get_schedules();
+        
+        // If our custom schedule isn't available, register it now
+        if (!isset($available_schedules[$interval])) {
+            $available_schedules = $this->register_cron_schedules($available_schedules);
+        }
+        
+        // Final validation
         if (!isset($available_schedules[$interval])) {
             $this->logger->error('Invalid cron interval specified', [
                 'hook' => self::HOOK_NAME,
@@ -93,28 +141,35 @@ class ShopCommerce_Cron {
             return false;
         }
 
-        // Clear any existing schedule first to ensure clean state
+        // Clear any existing schedule first
         $this->clear_cron_event();
 
         // Schedule the event
         $scheduled = wp_schedule_event($timestamp, $interval, self::HOOK_NAME);
 
         if ($scheduled === false) {
-            $this->logger->error('Failed to schedule cron event', [
+            $this->logger->error('wp_schedule_event returned false', [
                 'hook' => self::HOOK_NAME,
                 'interval' => $interval,
                 'timestamp' => $timestamp,
-                'available_schedules' => array_keys($available_schedules)
+                'current_time' => time(),
+                'cron_disabled' => defined('DISABLE_WP_CRON') ? DISABLE_WP_CRON : 'not defined'
             ]);
             return false;
         }
 
+        // Verify the event was actually scheduled
         $next_run = wp_next_scheduled(self::HOOK_NAME);
+        if (!$next_run) {
+            $this->logger->error('Event was not actually scheduled despite wp_schedule_event success');
+            return false;
+        }
+
         $this->logger->info('Successfully scheduled cron event', [
             'hook' => self::HOOK_NAME,
             'interval' => $interval,
             'timestamp' => $timestamp,
-            'next_run' => $next_run ? date('Y-m-d H:i:s', $next_run) : null,
+            'next_run' => date('Y-m-d H:i:s', $next_run),
             'schedule_interval' => $available_schedules[$interval]['interval'] ?? 'unknown'
         ]);
 
@@ -128,16 +183,27 @@ class ShopCommerce_Cron {
      * @return bool True if clearing was successful, false otherwise
      */
     private function clear_cron_event() {
-        $cleared = wp_clear_scheduled_hook(self::HOOK_NAME);
-
-        if ($cleared === false) {
-            $this->logger->error('Failed to clear cron event', ['hook' => self::HOOK_NAME]);
-            return false;
+        $next_scheduled = wp_next_scheduled(self::HOOK_NAME);
+        
+        if ($next_scheduled) {
+            $cleared = wp_clear_scheduled_hook(self::HOOK_NAME);
+            
+            if ($cleared !== false) {
+                $this->logger->info('Successfully cleared cron event', [
+                    'hook' => self::HOOK_NAME,
+                    'was_scheduled_for' => date('Y-m-d H:i:s', $next_scheduled)
+                ]);
+            } else {
+                $this->logger->error('Failed to clear cron event', ['hook' => self::HOOK_NAME]);
+                return false;
+            }
+        } else {
+            $this->logger->info('No cron event to clear', ['hook' => self::HOOK_NAME]);
         }
-
-        $this->logger->info('Successfully cleared cron event', ['hook' => self::HOOK_NAME]);
+        
         return true;
     }
+
 
     /**
      * Centralized method to get cron information
@@ -168,20 +234,27 @@ class ShopCommerce_Cron {
      * @return array Modified schedules
      */
     public function register_cron_schedules($schedules) {
-        $schedules['every_minute'] = [
-            'interval' => 60,
-            'display' => __('Every Minute', 'shopcommerce-product-sync-plugin')
-        ];
+        // Only add if not already present to avoid conflicts
+        if (!isset($schedules['every_minute'])) {
+            $schedules['every_minute'] = [
+                'interval' => 60,
+                'display' => __('Every Minute', 'shopcommerce-product-sync-plugin')
+            ];
+        }
 
-        $schedules['every_15_minutes'] = [
-            'interval' => 900,
-            'display' => __('Every 15 Minutes', 'shopcommerce-product-sync-plugin')
-        ];
+        if (!isset($schedules['every_15_minutes'])) {
+            $schedules['every_15_minutes'] = [
+                'interval' => 900,
+                'display' => __('Every 15 Minutes', 'shopcommerce-product-sync-plugin')
+            ];
+        }
 
-        $schedules['every_30_minutes'] = [
-            'interval' => 1800,
-            'display' => __('Every 30 Minutes', 'shopcommerce-product-sync-plugin')
-        ];
+        if (!isset($schedules['every_30_minutes'])) {
+            $schedules['every_30_minutes'] = [
+                'interval' => 1800,
+                'display' => __('Every 30 Minutes', 'shopcommerce-product-sync-plugin')
+            ];
+        }
 
         return $schedules;
     }
@@ -195,7 +268,6 @@ class ShopCommerce_Cron {
         $this->logger->info('Executing sync cron hook');
 
         try {
-            // Get the global sync handler
             if (isset($GLOBALS['shopcommerce_sync'])) {
                 $sync_handler = $GLOBALS['shopcommerce_sync'];
                 $sync_handler->execute_sync();
@@ -525,47 +597,57 @@ class ShopCommerce_Cron {
      *
      * @return array Debug information
      */
-    public function debug_cron_system() {
+ 
+     public function debug_cron_system() {
         $this->logger->info('Debugging cron system');
 
-        // Get all WordPress cron events
+        // Check WordPress cron status
+        $wp_cron_disabled = defined('DISABLE_WP_CRON') && DISABLE_WP_CRON;
+        
+        // Get all cron events
         $cron = _get_cron_array();
         $our_cron_events = [];
 
-        foreach ($cron as $timestamp => $hooks) {
-            foreach ($hooks as $hook => $events) {
-                if ($hook === self::HOOK_NAME) {
-                    $our_cron_events[] = [
-                        'timestamp' => $timestamp,
-                        'datetime' => date('Y-m-d H:i:s', $timestamp),
-                        'events' => $events
-                    ];
+        if (is_array($cron)) {
+            foreach ($cron as $timestamp => $hooks) {
+                foreach ($hooks as $hook => $events) {
+                    if ($hook === self::HOOK_NAME) {
+                        $our_cron_events[] = [
+                            'timestamp' => $timestamp,
+                            'datetime' => date('Y-m-d H:i:s', $timestamp),
+                            'events' => $events
+                        ];
+                    }
                 }
             }
         }
 
+        // Check if hook is registered
+        $hook_registered = has_action(self::HOOK_NAME);
+
         // Get available schedules
         $schedules = wp_get_schedules();
-        $custom_schedules = [];
-        foreach ($schedules as $key => $schedule) {
-            if (!in_array($key, ['hourly', 'twicedaily', 'daily'])) {
-                $custom_schedules[$key] = $schedule;
+        $our_schedules = [];
+        foreach (['every_minute', 'every_15_minutes', 'every_30_minutes'] as $schedule) {
+            if (isset($schedules[$schedule])) {
+                $our_schedules[$schedule] = $schedules[$schedule];
             }
         }
 
-        // Check if our hook is registered as an action
-        $global_actions = $GLOBALS['wp_filter'][self::HOOK_NAME] ?? null;
-        $hook_registered = !empty($global_actions);
-
         return [
             'hook_name' => self::HOOK_NAME,
+            'wp_cron_disabled' => $wp_cron_disabled,
             'hook_registered_as_action' => $hook_registered,
             'cron_events_for_hook' => $our_cron_events,
             'next_scheduled' => wp_next_scheduled(self::HOOK_NAME),
+            'next_scheduled_formatted' => wp_next_scheduled(self::HOOK_NAME) ? 
+                date('Y-m-d H:i:s', wp_next_scheduled(self::HOOK_NAME)) : null,
             'available_schedules' => array_keys($schedules),
-            'custom_schedules' => $custom_schedules,
-            'plugin_active' => is_plugin_active(plugin_basename($this->get_plugin_file())),
-            'wp_cron_enabled' => defined('DISABLE_WP_CRON') && !DISABLE_WP_CRON,
+            'our_custom_schedules' => $our_schedules,
+            'total_cron_events' => is_array($cron) ? count($cron) : 0,
+            'jobs_initialized' => is_array(get_option(self::JOBS_OPTION_KEY)),
+            'current_time' => time(),
+            'current_time_formatted' => date('Y-m-d H:i:s'),
         ];
     }
 
@@ -606,4 +688,33 @@ class ShopCommerce_Cron {
             'jobs_list' => $jobs,
         ];
     }
+
+    public function fix_cron_issues() {
+        $this->logger->info('Manually fixing cron issues');
+        
+        try {
+            // Re-run activation process
+            $this->activate();
+            
+            $next_run = wp_next_scheduled(self::HOOK_NAME);
+            if ($next_run) {
+                return [
+                    'success' => true,
+                    'message' => 'Cron job fixed successfully. Next run: ' . date('Y-m-d H:i:s', $next_run)
+                ];
+            } else {
+                return [
+                    'success' => false,
+                    'message' => 'Failed to fix cron job. Check WordPress cron configuration.'
+                ];
+            }
+            
+        } catch (Exception $e) {
+            return [
+                'success' => false,
+                'message' => 'Error fixing cron: ' . $e->getMessage()
+            ];
+        }
+    }
+
 }

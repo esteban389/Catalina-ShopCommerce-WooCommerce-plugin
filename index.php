@@ -31,6 +31,7 @@ require_once SHOPCOMMERCE_SYNC_INCLUDES_DIR . 'class-shopcommerce-api.php';
 require_once SHOPCOMMERCE_SYNC_INCLUDES_DIR . 'class-shopcommerce-helpers.php';
 require_once SHOPCOMMERCE_SYNC_INCLUDES_DIR . 'class-shopcommerce-product.php';
 require_once SHOPCOMMERCE_SYNC_INCLUDES_DIR . 'class-shopcommerce-cron.php';
+require_once SHOPCOMMERCE_SYNC_INCLUDES_DIR . 'class-shopcommerce-cron-debug.php';
 require_once SHOPCOMMERCE_SYNC_INCLUDES_DIR . 'class-shopcommerce-sync.php';
 require_once SHOPCOMMERCE_SYNC_INCLUDES_DIR . 'class-shopcommerce-config.php';
 
