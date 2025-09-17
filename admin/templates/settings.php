@@ -460,7 +460,7 @@ jQuery(document).ready(function($) {
             },
             success: function(response) {
                 if (response.success) {
-                    alert('Settings saved successfully!');
+                    alert('Settings saved successfully!' + (response.data.debug ? '\n\nDebug info: ' + JSON.stringify(response.data.debug, null, 2) : ''));
                     location.reload();
                 } else {
                     alert('Failed to save settings: ' + response.data.error);

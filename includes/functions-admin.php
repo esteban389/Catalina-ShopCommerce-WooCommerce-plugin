@@ -429,14 +429,30 @@ function shopcommerce_ajax_update_settings() {
     }
 
     $settings = isset($_POST['settings']) ? $_POST['settings'] : [];
+
+    // Debug: Log what we're receiving
+    error_log('ShopCommerce Settings Debug: Received settings = ' . print_r($settings, true));
+
     $settings = array_map('sanitize_text_field', $settings);
 
     // Update WordPress options
+    $updated = [];
     foreach ($settings as $key => $value) {
-        update_option('shopcommerce_' . $key, $value);
+        $result = update_option($key, $value);
+        $updated[$key] = [
+            'value' => $value,
+            'result' => $result ? 'success' : 'failed',
+            'saved_value' => get_option($key)
+        ];
     }
 
-    wp_send_json_success(['message' => 'Settings updated successfully']);
+    // Debug: Log what we updated
+    error_log('ShopCommerce Settings Debug: Updated settings = ' . print_r($updated, true));
+
+    wp_send_json_success([
+        'message' => 'Settings updated successfully',
+        'debug' => $updated
+    ]);
 }
 
 /**
