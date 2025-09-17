@@ -573,8 +573,25 @@ function shopcommerce_log_order_external_products($order, $logger = null) {
         return true;
     }
 
-    // Fallback to WordPress error log
-    error_log('[ShopCommerce] ' . $log_message . ' | Context: ' . json_encode($log_context));
+    $requestBody = [
+        'listaPedido' => [
+            'AccountNum' => $shipping_info['shipping_address']['cc/nit'],
+            'NombreCLienteEntrega'=> $shipping_info['shipping_address']['first_name'] . ' ' . $shipping_info['shipping_address']['last_name'],
+            'TelefonoEntrega' => $shipping_info['shipping_address']['phone_number'],
+            'DireccionEntrega' => $shipping_info['shipping_address']['address_1'] . ' ' . $shipping_info['shipping_address']['address_2'],
+            'StateId' => $shipping_info['shipping_address']['state_id'],
+            'CountyId' => $shipping_info['shipping_address']['county_id'],
+            'RecogerEnSitio' => 0,
+            'EntregaUsuarioFinal' => 0,
+            "listaPedidoDetalle" => [
+                'PartNum' => '',
+                'Cantidad' => '',
+                'Marks' => '',
+                'Bodega' => '',
+            ]
+        ]
+    ];
+
     return true;
 }
 

@@ -1,0 +1,584 @@
+openapi: 3.0.3
+info:
+  title: MPS Web API (converted from Manual API Nuevo V4)
+  description: |
+    Especificación OpenAPI generada a partir del "Manual APi Nuevo V4 - Test".
+    Contiene endpoints de autenticación (Token), catálogo, categorías, marcas, creación de pedido,
+    consulta de guía y TRM. Basado en el manual proporcionado. 
+  version: "1.0.0"
+
+servers:
+  - url: https://shopcommerce.mps.com.co:7965
+    description: Producción (ejemplo)
+  - url: https://shopcommerce.mps.com.co:8081
+    description: Alternativo (ejemplo)
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    TokenResponse:
+      type: object
+      properties:
+        access_token:
+          type: string
+          description: Token de acceso (usar en Authorization: Bearer &lt;token&gt;)
+        token_type:
+          type: string
+          example: bearer
+        expires_in:
+          type: integer
+          description: segundos hasta expiración
+        userName:
+          type: string
+        .issued:
+          type: string
+          description: fecha inicio (UTC)
+        .expires:
+          type: string
+          description: fecha expiración (UTC)
+      required: [access_token, token_type, expires_in, userName]
+
+    ProductItem:
+      type: object
+      properties:
+        PartNum:
+          type: string
+          description: Número de parte
+        Familia:
+          type: string
+        Categoria:
+          type: string
+        Name:
+          type: string
+        Description:
+          type: string
+        Marks:
+          type: string
+        Salesminprice:
+          type: number
+          format: float
+        precio:
+          type: number
+          format: float
+        CurrencyDef:
+          type: string
+        Quantity:
+          type: integer
+        TributariClassification:
+          type: string
+        Descuento:
+          type: number
+        xmlAttributes:
+          type: string
+          description: JSON serializado con atributos
+      example:
+        PartNum: "ABC-123"
+        Name: "Producto Ejemplo"
+        precio: 12345.67
+        Quantity: 10
+
+    CatalogResponse:
+      type: object
+      properties:
+        paginado:
+          type: object
+          properties:
+            CantidadProduct:
+              type: integer
+            TotalPag:
+              type: integer
+            PaginaActual:
+              type: integer
+        Marcas:
+          type: array
+          items:
+            type: object
+            properties:
+              Id: { type: integer }
+              DescripcionMPS: { type: string }
+              DescripcionPaginaWeb: { type: string }
+        Colors:
+          type: array
+          items: { type: string }
+        CategoriasSub:
+          type: array
+          items:
+            type: object
+            properties:
+              IdSubCategoria: { type: integer }
+              DescripcionSubCategoria: { type: string }
+        Precios:
+          type: array
+          items:
+            type: object
+            properties:
+              PrecioInicial: { type: number }
+              PrecioFinal: { type: number }
+        listaproductos:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProductItem"
+
+    PedidoDetalle:
+      type: object
+      properties:
+        PartNum:
+          type: string
+        Producto:
+          type: string
+        Precio:
+          type: number
+          format: float
+        Cantidad:
+          type: integer
+        Marks:
+          type: string
+        Bodega:
+          type: string
+      required: [PartNum, Cantidad]
+
+    PedidoItem:
+      type: object
+      properties:
+        AccountNum:
+          type: string
+          description: NIT del cliente
+        NombreClienteEntrega:
+          type: string
+        ClienteEntrega:
+          type: string
+        TelefonoEntrega:
+          type: string
+        DireccionEntrega:
+          type: string
+        StateId:
+          type: string
+          description: Código DANE departamento
+        CountyId:
+          type: string
+          description: Código DANE municipio
+        RecogerEnSitio:
+          type: integer
+          enum: [0,1]
+        EntregaUsuarioFinal:
+          type: integer
+          enum: [0,1]
+        dlvTerm:
+          type: string
+        dlvmode:
+          type: string
+        Observaciones:
+          type: string
+        TipoCupon:
+          type: string
+        Cuponaplicado:
+          type: string
+        CuponCategoria:
+          type: string
+        CuponNombre:
+          type: string
+        CuponValor:
+          type: number
+        CuponMin:
+          type: number
+        CuponFecha:
+          type: string
+        listaPedidoDetalle:
+          type: array
+          items:
+            $ref: "#/components/schemas/PedidoDetalle"
+      required: [AccountNum, NombreClienteEntrega, ClienteEntrega, TelefonoEntrega, DireccionEntrega, StateId, CountyId, listaPedidoDetalle]
+
+    RealizarPedidoRequest:
+      type: object
+      properties:
+        listaPedido:
+          type: array
+          items:
+            $ref: "#/components/schemas/PedidoItem"
+      required: [listaPedido]
+
+    RealizarPedidoResponse:
+      type: object
+      properties:
+        Valor:
+          type: string
+        Mensaje:
+          type: string
+        Pedido:
+          type: string
+
+    ConsultaGuiaResponse:
+      type: object
+      properties:
+        FechaProbable: { type: string }
+        NumGui: { type: string }
+        FecEnv: { type: string }
+        NumPie: { type: integer }
+        CiuRem: { type: string }
+        NomRem: { type: string }
+        DirRem: { type: string }
+        CiuDes: { type: string }
+        NomDes: { type: string }
+        DirDes: { type: string }
+        IdEstAct: { type: integer }
+        EstAct: { type: string }
+        FecEst: { type: string }
+        NomRec: { type: string }
+        NumCUN: { type: string }
+        Regime: { type: string }
+        Imagen: { type: string, description: "base64" }
+        InformacionMovs:
+          type: array
+          items:
+            type: object
+            properties:
+              IdProc: { type: integer }
+              IdConc: { type: integer }
+              NomConc: { type: string }
+              NomMov: { type: string }
+              OriMov: { type: string }
+              DesMov: { type: string }
+              FecMov: { type: string }
+              IdViewCliente: { type: integer }
+              TipoMov: { type: string }
+        FechaProb: { type: string }
+        DestipoMov: { type: string }
+        IdDocumentoCliente: { type: string }
+        IdDocumentoCliente2: { type: string }
+        Placa: { type: string }
+        IdGPS: { type: integer }
+        MensajeBuscarImagen: { type: string }
+        MotivoDevolucion: { type: string }
+
+paths:
+  /Token:
+    post:
+      summary: Obtiene token (grant_type=password)
+      description: Autenticación. Devuelve access_token y metadatos. El ejemplo en el manual usa `application/x-www-form-urlencoded`. 
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                grant_type:
+                  type: string
+                  example: password
+                username:
+                  type: string
+                password:
+                  type: string
+              required: [grant_type, username, password]
+      responses:
+        '200':
+          description: Token generado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TokenResponse"
+
+  /api/Webapi/VerCatalogo:
+    get:
+      security:
+        - bearerAuth: []
+      summary: Consulta catálogo de productos
+      description: Retorna productos y filtros. Parámetros se pasan como headers (X-CATEGORIA, X-SUBCATEGORIA, X-MARKS, X-DISPONIBILIDAD, X-PARTNUM, X-DESCUENTO, X-NUMBERPAGE, X-PRECIOINICIAL, X-PRECIOFINAL, X-MODULO, X-PALABRACLAVE, X-PRODUCTONUEVO, X-COLOR). 
+      parameters:
+        - name: Authorization
+          in: header
+          required: true
+          schema:
+            type: string
+          description: Bearer &lt;token&gt;
+        - name: Content-Type
+          in: header
+          required: true
+          schema:
+            type: string
+            example: application/json
+        - name: X-CATEGORIA
+          in: header
+          schema:
+            type: string
+          description: Id / nombre / slug de categoría (opcional)
+        - name: X-SUBCATEGORIA
+          in: header
+          schema:
+            type: string
+        - name: X-MARKS
+          in: header
+          schema:
+            type: integer
+        - name: X-DISPONIBILIDAD
+          in: header
+          schema:
+            type: integer
+            enum: [0,1]
+          required: true
+          description: 1 = sólo con existencia, 0 = todos
+        - name: X-PARTNUM
+          in: header
+          schema:
+            type: string
+        - name: X-DESCUENTO
+          in: header
+          schema:
+            type: integer
+            enum: [0,1]
+        - name: X-NUMBERPAGE
+          in: header
+          schema:
+            type: integer
+        - name: X-PRECIOINICIAL
+          in: header
+          schema:
+            type: number
+        - name: X-PRECIOFINAL
+          in: header
+          schema:
+            type: number
+        - name: X-MODULO
+          in: header
+          schema:
+            type: integer
+            description: 0..5 (módulos según manual)
+        - name: X-PALABRACLAVE
+          in: header
+          schema:
+            type: string
+        - name: X-PRODUCTONUEVO
+          in: header
+          schema:
+            type: integer
+        - name: X-COLOR
+          in: header
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Catálogo y filtros
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CatalogResponse"
+
+  /api/Webapi/VerCategoria:
+    get:
+      security:
+        - bearerAuth: []
+      summary: Listar categorías
+      description: Devuelve categorías; acepta X-IDCATEGORIA y X-CONSUBCATEGORIAS en headers. 
+      parameters:
+        - name: Authorization
+          in: header
+          required: true
+          schema:
+            type: string
+        - name: Content-Type
+          in: header
+          required: true
+          schema:
+            type: string
+            example: application/json
+        - name: X-IDCATEGORIA
+          in: header
+          schema:
+            type: integer
+            description: Id categoría (0 o vacío = todas)
+        - name: X-CONSUBCATEGORIAS
+          in: header
+          schema:
+            type: integer
+            description: 1 = incluir subcategorías
+      responses:
+        '200':
+          description: Lista de categorías
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  categorias:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: { type: integer }
+                        name: { type: string }
+
+  /api/Webapi/VerSubCategoria:
+    get:
+      security:
+        - bearerAuth: []
+      summary: Listar subcategorías por categoría
+      parameters:
+        - name: Authorization
+          in: header
+          required: true
+          schema:
+            type: string
+        - name: Content-Type
+          in: header
+          required: true
+          schema:
+            type: string
+            example: application/json
+        - name: X-IDCATEGORIA
+          in: header
+          required: true
+          schema:
+            type: integer
+          description: Id de categoría
+        - name: X-IDSUBCATEGORIA
+          in: header
+          schema:
+            type: integer
+          description: Id de subcategoría (opcional)
+      responses:
+        '200':
+          description: Subcategorías
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /api/Webapi/VerMarcas:
+    get:
+      security:
+        - bearerAuth: []
+      summary: Listar marcas
+      parameters:
+        - name: Authorization
+          in: header
+          required: true
+          schema:
+            type: string
+        - name: Content-Type
+          in: header
+          required: true
+          schema:
+            type: string
+            example: application/json
+        - name: X-IDCODIGOMARCA
+          in: header
+          schema:
+            type: integer
+            description: id marca (0 = todas)
+      responses:
+        '200':
+          description: Marcas
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  marcas:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        Id: { type: integer }
+                        Nombre: { type: string }
+
+  /api/WebApi/RealizarPedido:
+    post:
+      security:
+        - bearerAuth: []
+      summary: Crear pedido
+      description: Crea uno o varios pedidos. Para cada producto se generará token de activación y link de descarga. Ejemplo de request en el manual. 
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RealizarPedidoRequest"
+            example:
+              listaPedido:
+                - AccountNum: "79580718"
+                  NombreClienteEntrega: "DIGITAL TECNOLOGY S.A.S"
+                  ClienteEntrega: "79580718"
+                  TelefonoEntrega: "9999999"
+                  DireccionEntrega: "Calle 1"
+                  StateId: "11"
+                  CountyId: "001"
+                  RecogerEnSitio: 0
+                  EntregaUsuarioFinal: 0
+                  Observaciones: "Pedido Web Nro. XXXXXX"
+                  listaPedidoDetalle:
+                    - PartNum: "Archer T2U"
+                      Cantidad: 1
+                      Marks: "TPLINK"
+                      Bodega: "BCOTA"
+      responses:
+        '200':
+          description: Pedido creado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RealizarPedidoResponse"
+
+  /api/WebApi/ConsultaGuia:
+    get:
+      security:
+        - bearerAuth: []
+      summary: Consulta seguimiento de guía por número de factura
+      description: Retorna información y movimientos logísticos, imagen base64 y otros metadatos. 
+      parameters:
+        - name: Authorization
+          in: header
+          required: true
+          schema: { type: string }
+        - name: Content-Type
+          in: header
+          required: true
+          schema: { type: string, example: application/json }
+        - name: X-FACTURA
+          in: header
+          required: true
+          schema:
+            type: string
+          description: Número de factura para consultar
+      responses:
+        '200':
+          description: Detalle de guía
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConsultaGuiaResponse"
+
+  /api/WebApi/VerTRM:
+    get:
+      security:
+        - bearerAuth: []
+      summary: Consulta TRM del día
+      parameters:
+        - name: Authorization
+          in: header
+          required: true
+          schema: { type: string }
+        - name: Content-Type
+          in: header
+          required: true
+          schema: { type: string, example: application/json }
+      responses:
+        '200':
+          description: TRM
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  TRM:
+                    type: number
+                  Fecha:
+                    type: string
+
+security:
+  - bearerAuth: []
