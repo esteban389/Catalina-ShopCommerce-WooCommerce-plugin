@@ -260,6 +260,11 @@ function shopcommerce_get_order_shipping_info($order) {
             'country' => $shipping_address['country'] ?? '',
             'phone' => $shipping_address['phone'] ?? '',
             'formatted_address' => method_exists($order, 'get_formatted_shipping_address') ? $order->get_formatted_shipping_address() : shopcommerce_format_address($shipping_address),
+            'state_id' => $order->get_meta('_shipping_state_id') ?? '',
+            'county_id' => $order->get_meta('_shipping_county_id') ?? '',
+            'phone_number' => $order->get_meta('_shipping_phone_number') ?? '',
+            // In the wordpress page this doesn't have a proper meta field, so we need to get it using the default name, this mapps to the field with label CEDULA/NIT
+            'cc/nit' => $order->get_meta('_shipping_') ?? '',
         ];
     }
 
@@ -1048,8 +1053,8 @@ function shopcommerce_update_existing_orders_metadata($args = []) {
 function shopcommerce_add_custom_shipping_fields($fields) {
     // Add custom shipping fields
     $fields['shipping']['shipping_phone_number'] = [
-        'label'        => __('Phone Number', 'shopcommerce-product-sync-plugin'),
-        'placeholder'  => __('Enter phone number', 'shopcommerce-product-sync-plugin'),
+        'label'        => __('Número de teléfono', 'shopcommerce-product-sync-plugin'),
+        'placeholder'  => __('Ingrese el número de teléfono', 'shopcommerce-product-sync-plugin'),
         'required'     => true,
         'class'        => ['form-row-wide'],
         'priority'     => 25,
@@ -1057,25 +1062,46 @@ function shopcommerce_add_custom_shipping_fields($fields) {
     ];
 
     $fields['shipping']['shipping_state_id'] = [
-        'label'        => __('State ID', 'shopcommerce-product-sync-plugin'),
-        'placeholder'  => __('Enter state ID', 'shopcommerce-product-sync-plugin'),
+        'label'        => __('Departamento', 'shopcommerce-product-sync-plugin'),
+        'placeholder'  => __('Ingrese el departamento', 'shopcommerce-product-sync-plugin'),
         'required'     => true,
         'class'        => ['form-row-wide'],
         'priority'     => 30,
         'clear'        => true,
+        'type'         => 'select',
+        'options'      => [''=>'Seleccione...'],
     ];
 
     $fields['shipping']['shipping_county_id'] = [
-        'label'        => __('County ID', 'shopcommerce-product-sync-plugin'),
-        'placeholder'  => __('Enter county ID', 'shopcommerce-product-sync-plugin'),
+        'label'        => __('Municipio', 'shopcommerce-product-sync-plugin'),
+        'placeholder'  => __('Ingrese el municipio', 'shopcommerce-product-sync-plugin'),
         'required'     => true,
         'class'        => ['form-row-wide'],
         'priority'     => 35,
         'clear'        => true,
+        'type'         => 'select',
+        'options'      => [''=>'Seleccione...'],
     ];
 
     return $fields;
 }
+
+add_action('wp_enqueue_scripts', 'enqueue_checkout_scripts');
+function enqueue_checkout_scripts() {
+    if (is_checkout()) {
+        wp_enqueue_script(
+            'checkout-selects',
+            SHOPCOMMERCE_SYNC_ASSETS_DIR . 'js/checkout-selects.js',
+            array('jquery'),
+            '1.0',
+            true
+        );
+
+        $departamentos_data = file_get_contents(SHOPCOMMERCE_SYNC_ASSETS_DATA_DIR . 'dane-codes.json');
+        wp_localize_script('checkout-selects', 'DANE_DATA', json_decode($departamentos_data, true));
+    }
+}
+
 
 /**
  * Validate custom shipping fields during checkout
