@@ -732,7 +732,12 @@ class ShopCommerce_Helpers
      */
     public function get_sync_config()
     {
-        // Use dynamic configuration if available, fallback to hardcoded for backward compatibility
+        // Use jobs store if available
+        if (isset($GLOBALS['shopcommerce_jobs_store'])) {
+            return $GLOBALS['shopcommerce_jobs_store']->get_sync_config();
+        }
+
+        // Fallback to dynamic configuration if available, fallback to hardcoded for backward compatibility
         if (isset($GLOBALS['shopcommerce_config'])) {
             return $GLOBALS['shopcommerce_config']->get_sync_config();
         }
@@ -772,7 +777,12 @@ class ShopCommerce_Helpers
      */
     public function build_jobs_list()
     {
-        // Use dynamic configuration if available, fallback to hardcoded
+        // Use jobs store if available
+        if (isset($GLOBALS['shopcommerce_jobs_store'])) {
+            return $GLOBALS['shopcommerce_jobs_store']->get_jobs();
+        }
+
+        // Fallback to dynamic configuration if available, fallback to hardcoded
         if (isset($GLOBALS['shopcommerce_config'])) {
             return $GLOBALS['shopcommerce_config']->build_jobs_list();
         }

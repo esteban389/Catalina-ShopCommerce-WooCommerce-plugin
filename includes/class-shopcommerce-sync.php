@@ -32,6 +32,11 @@ class ShopCommerce_Sync {
     private $cron_scheduler;
 
     /**
+     * Jobs store instance
+     */
+    private $jobs_store;
+
+    /**
      * Default batch size for processing products
      */
     const DEFAULT_BATCH_SIZE = 100;
@@ -43,12 +48,14 @@ class ShopCommerce_Sync {
      * @param ShopCommerce_API $api_client API client instance
      * @param ShopCommerce_Product $product_handler Product handler instance
      * @param ShopCommerce_Cron $cron_scheduler Cron scheduler instance
+     * @param ShopCommerce_Jobs_Store $jobs_store Jobs store instance
      */
-    public function __construct($logger, $api_client, $product_handler, $cron_scheduler) {
+    public function __construct($logger, $api_client, $product_handler, $cron_scheduler, $jobs_store = null) {
         $this->logger = $logger;
         $this->api_client = $api_client;
         $this->product_handler = $product_handler;
         $this->cron_scheduler = $cron_scheduler;
+        $this->jobs_store = $jobs_store;
     }
 
     /**

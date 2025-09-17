@@ -34,6 +34,7 @@ require_once SHOPCOMMERCE_SYNC_INCLUDES_DIR . 'class-shopcommerce-cron.php';
 require_once SHOPCOMMERCE_SYNC_INCLUDES_DIR . 'class-shopcommerce-cron-debug.php';
 require_once SHOPCOMMERCE_SYNC_INCLUDES_DIR . 'class-shopcommerce-sync.php';
 require_once SHOPCOMMERCE_SYNC_INCLUDES_DIR . 'class-shopcommerce-config.php';
+require_once SHOPCOMMERCE_SYNC_INCLUDES_DIR . 'class-shopcommerce-jobs-store.php';
 
 // Include admin functions
 require_once SHOPCOMMERCE_SYNC_INCLUDES_DIR . 'functions-admin.php';
@@ -46,6 +47,9 @@ function shopcommerce_sync_init()
 {
     // Initialize the logger first
     $logger = new ShopCommerce_Logger();
+
+    // Initialize jobs store first
+    $jobs_store = new ShopCommerce_Jobs_Store($logger);
 
     // Initialize configuration manager
     $config_manager = new ShopCommerce_Config($logger);
@@ -60,13 +64,14 @@ function shopcommerce_sync_init()
     $product_handler = new ShopCommerce_Product($logger, $helpers);
 
     // Initialize cron scheduler
-    $cron_scheduler = new ShopCommerce_Cron($logger);
+    $cron_scheduler = new ShopCommerce_Cron($logger, $jobs_store);
 
     // Initialize main sync logic
-    $sync_handler = new ShopCommerce_Sync($logger, $api_client, $product_handler, $cron_scheduler);
+    $sync_handler = new ShopCommerce_Sync($logger, $api_client, $product_handler, $cron_scheduler, $jobs_store);
 
     // Make instances available globally if needed
     $GLOBALS['shopcommerce_logger'] = $logger;
+    $GLOBALS['shopcommerce_jobs_store'] = $jobs_store;
     $GLOBALS['shopcommerce_config'] = $config_manager;
     $GLOBALS['shopcommerce_api'] = $api_client;
     $GLOBALS['shopcommerce_helpers'] = $helpers;
@@ -88,10 +93,11 @@ function shopcommerce_sync_activate()
         wp_mkdir_p(SHOPCOMMERCE_SYNC_LOGS_DIR);
     }
 
-    // Initialize cron scheduler
-    if (class_exists('ShopCommerce_Cron')) {
+    // Initialize jobs store and cron scheduler
+    if (class_exists('ShopCommerce_Cron') && class_exists('ShopCommerce_Jobs_Store')) {
         $logger = new ShopCommerce_Logger();
-        $cron_scheduler = new ShopCommerce_Cron($logger);
+        $jobs_store = new ShopCommerce_Jobs_Store($logger);
+        $cron_scheduler = new ShopCommerce_Cron($logger, $jobs_store);
         $cron_scheduler->activate();
     }
 }

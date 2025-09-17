@@ -10,16 +10,17 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-// Get config manager and helpers
+// Get jobs store, config manager and helpers
+$jobs_store = isset($GLOBALS['shopcommerce_jobs_store']) ? $GLOBALS['shopcommerce_jobs_store'] : null;
 $config = isset($GLOBALS['shopcommerce_config']) ? $GLOBALS['shopcommerce_config'] : null;
 $helpers = isset($GLOBALS['shopcommerce_helpers']) ? $GLOBALS['shopcommerce_helpers'] : null;
 $logger = isset($GLOBALS['shopcommerce_logger']) ? $GLOBALS['shopcommerce_logger'] : null;
 
-// Get data
-$brands = $config ? $config->get_brands(false) : [];
-$categories = $config ? $config->get_categories(false) : [];
-$active_brands = $config ? $config->get_brands(true) : [];
-$active_categories = $config ? $config->get_categories(true) : [];
+// Get data - use jobs store if available, fallback to config
+$brands = $jobs_store ? $jobs_store->get_brands(false) : ($config ? $config->get_brands(false) : []);
+$categories = $jobs_store ? $jobs_store->get_categories(false) : ($config ? $config->get_categories(false) : []);
+$active_brands = $jobs_store ? $jobs_store->get_brands(true) : ($config ? $config->get_brands(true) : []);
+$active_categories = $jobs_store ? $jobs_store->get_categories(true) : ($config ? $config->get_categories(true) : []);
 
 // Get current tab
 $current_tab = isset($_GET['tab']) ? sanitize_text_field($_GET['tab']) : 'brands';
@@ -76,8 +77,14 @@ $current_tab = isset($_GET['tab']) ? sanitize_text_field($_GET['tab']) : 'brands
                         <tbody>
                             <?php foreach ($brands as $brand): ?>
                                 <?php
-                                $brand_categories = $config->get_brand_categories($brand->id);
-                                $has_all_categories = $config->brand_has_all_categories($brand->id);
+                                // Use jobs store if available, fallback to config
+                                if ($jobs_store) {
+                                    $brand_categories = $jobs_store->get_brand_categories($brand->id);
+                                    $has_all_categories = $jobs_store->brand_has_all_categories($brand->id);
+                                } else {
+                                    $brand_categories = $config->get_brand_categories($brand->id);
+                                    $has_all_categories = $config->brand_has_all_categories($brand->id);
+                                }
                                 $category_count = count($brand_categories);
                                 $total_categories = count($active_categories);
                                 ?>
@@ -223,14 +230,27 @@ $current_tab = isset($_GET['tab']) ? sanitize_text_field($_GET['tab']) : 'brands
 
                 <!-- Jobs List -->
                 <div class="jobs-list">
-                    <?php if ($config): ?>
-                        <?php $jobs = $config->build_jobs_list(); ?>
+                    <?php if ($jobs_store || $config): ?>
+                        <?php
+                        // Use jobs store if available, fallback to config
+                        if ($jobs_store) {
+                            $jobs = $jobs_store->get_jobs();
+                        } else {
+                            $jobs = $config->build_jobs_list();
+                        }
+                        ?>
                         <?php if (!empty($jobs)): ?>
                             <div class="job-cards">
                                 <?php foreach ($jobs as $job): ?>
                                     <?php
-                                    $brand_categories = $config->get_brand_categories($job['brand_id']);
-                                    $has_all_categories = $config->brand_has_all_categories($job['brand_id']);
+                                    // Use jobs store if available, fallback to config
+                                    if ($jobs_store) {
+                                        $brand_categories = $jobs_store->get_brand_categories($job['brand_id']);
+                                        $has_all_categories = $jobs_store->brand_has_all_categories($job['brand_id']);
+                                    } else {
+                                        $brand_categories = $config->get_brand_categories($job['brand_id']);
+                                        $has_all_categories = $config->brand_has_all_categories($job['brand_id']);
+                                    }
                                     ?>
                                     <div class="job-card">
                                         <div class="job-header">
@@ -264,7 +284,7 @@ $current_tab = isset($_GET['tab']) ? sanitize_text_field($_GET['tab']) : 'brands
                         <?php endif; ?>
                     <?php else: ?>
                         <div class="notice notice-error inline">
-                            <p>Configuration manager not available.</p>
+                            <p>Neither jobs store nor configuration manager available.</p>
                         </div>
                     <?php endif; ?>
                 </div>

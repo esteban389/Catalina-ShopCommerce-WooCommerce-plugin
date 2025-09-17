@@ -1,14 +1,15 @@
 <?php
 
 /**
- * ShopCommerce Configuration Manager Class
+ * ShopCommerce Jobs Store Class
  *
- * Handles dynamic brand and category configuration with database storage.
+ * Centralized management of brands, categories, and sync jobs.
+ * This class replaces direct database operations with a unified interface.
  *
  * @package ShopCommerce_Sync
  */
 
-class ShopCommerce_Config {
+class ShopCommerce_Jobs_Store {
 
     /**
      * Logger instance
@@ -23,6 +24,13 @@ class ShopCommerce_Config {
     private $brand_categories_table;
 
     /**
+     * Cache for jobs list
+     */
+    private $jobs_cache = null;
+    private $cache_timestamp = 0;
+    private $cache_ttl = 300; // 5 minutes cache
+
+    /**
      * Constructor
      *
      * @param ShopCommerce_Logger $logger Logger instance
@@ -35,7 +43,7 @@ class ShopCommerce_Config {
         $this->categories_table = $wpdb->prefix . 'shopcommerce_categories';
         $this->brand_categories_table = $wpdb->prefix . 'shopcommerce_brand_categories';
 
-        // Create tables on activation (if jobs store hasn't already created them)
+        // Create tables if they don't exist
         $this->create_tables();
     }
 
@@ -92,135 +100,7 @@ class ShopCommerce_Config {
         dbDelta($brand_categories_sql);
 
         // Initialize with default data if tables are empty
-        $this->initialize_default_data();
-    }
-
-    /**
-     * Initialize with default hardcoded data
-     */
-    private function initialize_default_data() {
-        global $wpdb;
-
-        // Check if brands table is empty
-        $brand_count = $wpdb->get_var("SELECT COUNT(*) FROM {$this->brands_table}");
-
-        if ($brand_count == 0) {
-            // Insert default brands
-            $default_brands = [
-                ['HP INC', 'hp-inc', 'HP Inc products'],
-                ['DELL', 'dell', 'Dell products'],
-                ['LENOVO', 'lenovo', 'Lenovo products'],
-                ['APPLE', 'apple', 'Apple products'],
-                ['ASUS', 'asus', 'ASUS products'],
-                ['BOSE', 'bose', 'Bose products'],
-                ['EPSON', 'epson', 'Epson products'],
-                ['JBL', 'jbl', 'JBL products'],
-            ];
-
-            foreach ($default_brands as $brand) {
-                $wpdb->insert(
-                    $this->brands_table,
-                    [
-                        'name' => $brand[0],
-                        'slug' => $brand[1],
-                        'description' => $brand[2],
-                    ]
-                );
-            }
-
-            $this->logger->info('Initialized default brands', ['count' => count($default_brands)]);
-        }
-
-        // Check if categories table is empty
-        $category_count = $wpdb->get_var("SELECT COUNT(*) FROM {$this->categories_table}");
-
-        if ($category_count == 0) {
-            // Insert default categories
-            $default_categories = [
-                ['Accesorios Y Perifericos', 1, 'Accessories and peripherals'],
-                ['Computadores', 7, 'Computers, laptops, workstations'],
-                ['Impresión', 12, 'Printing equipment'],
-                ['Video', 14, 'Video equipment and monitors'],
-                ['Servidores Y Almacenamiento', 18, 'Servers and storage'],
-            ];
-
-            foreach ($default_categories as $category) {
-                $wpdb->insert(
-                    $this->categories_table,
-                    [
-                        'name' => $category[0],
-                        'code' => $category[1],
-                        'description' => $category[2],
-                    ]
-                );
-            }
-
-            $this->logger->info('Initialized default categories', ['count' => count($default_categories)]);
-        }
-
-        // Check if brand-categories table is empty and populate with existing relationships
-        $relation_count = $wpdb->get_var("SELECT COUNT(*) FROM {$this->brand_categories_table}");
-
-        if ($relation_count == 0) {
-            // Get all brands and categories
-            $brands = $wpdb->get_results("SELECT id, name FROM {$this->brands_table}");
-            $categories = $wpdb->get_results("SELECT id, code FROM {$this->categories_table}");
-
-            // Create category code mapping
-            $category_map = [];
-            foreach ($categories as $category) {
-                $category_map[$category->code] = $category->id;
-            }
-
-            // Define default brand-category relationships based on original hardcoded config
-            $default_relationships = [
-                'HP INC' => [1, 7, 12, 14, 18],
-                'DELL' => [1, 7, 12, 14, 18],
-                'LENOVO' => [1, 7, 12, 14, 18],
-                'APPLE' => [1, 7],
-                'ASUS' => [7],
-                'BOSE' => [], // All categories
-                'EPSON' => [], // All categories
-                'JBL' => [], // All categories
-            ];
-
-            foreach ($brands as $brand) {
-                $brand_name = $brand->name;
-                $brand_id = $brand->id;
-
-                if (isset($default_relationships[$brand_name])) {
-                    $category_codes = $default_relationships[$brand_name];
-
-                    if (empty($category_codes)) {
-                        // All categories for this brand
-                        foreach ($categories as $category) {
-                            $wpdb->insert(
-                                $this->brand_categories_table,
-                                [
-                                    'brand_id' => $brand_id,
-                                    'category_id' => $category->id,
-                                ]
-                            );
-                        }
-                    } else {
-                        // Specific categories for this brand
-                        foreach ($category_codes as $code) {
-                            if (isset($category_map[$code])) {
-                                $wpdb->insert(
-                                    $this->brand_categories_table,
-                                    [
-                                        'brand_id' => $brand_id,
-                                        'category_id' => $category_map[$code],
-                                    ]
-                                );
-                            }
-                        }
-                    }
-                }
-            }
-
-            $this->logger->info('Initialized default brand-category relationships');
-        }
+        $this->initialize_default_data_if_tables_empty();
     }
 
     /**
@@ -290,6 +170,57 @@ class ShopCommerce_Config {
     }
 
     /**
+     * Get sync jobs list (cached)
+     *
+     * @return array List of sync jobs
+     */
+    public function get_jobs() {
+        // Check cache
+        if ($this->jobs_cache !== null && (time() - $this->cache_timestamp) < $this->cache_ttl) {
+            return $this->jobs_cache;
+        }
+
+        $brands = $this->get_brands();
+        $jobs = [];
+
+        foreach ($brands as $brand) {
+            if ($this->brand_has_all_categories($brand->id)) {
+                $jobs[] = [
+                    'brand' => $brand->name,
+                    'brand_id' => $brand->id,
+                    'categories' => [], // Empty means all categories
+                ];
+            } else {
+                $brand_categories = $this->get_brand_categories($brand->id);
+                $category_codes = [];
+                foreach ($brand_categories as $category) {
+                    $category_codes[] = $category->code;
+                }
+                $jobs[] = [
+                    'brand' => $brand->name,
+                    'brand_id' => $brand->id,
+                    'categories' => $category_codes,
+                ];
+            }
+        }
+
+        // Cache the results
+        $this->jobs_cache = $jobs;
+        $this->cache_timestamp = time();
+
+        return $jobs;
+    }
+
+    /**
+     * Clear jobs cache
+     */
+    public function clear_cache() {
+        $this->jobs_cache = null;
+        $this->cache_timestamp = 0;
+        $this->logger->debug('Cleared jobs store cache');
+    }
+
+    /**
      * Create a new brand
      *
      * @param string $name Brand name
@@ -336,6 +267,9 @@ class ShopCommerce_Config {
                     ]
                 );
             }
+
+            // Clear cache
+            $this->clear_cache();
 
             return $brand_id;
         }
@@ -384,6 +318,10 @@ class ShopCommerce_Config {
         if ($result) {
             $category_id = $wpdb->insert_id;
             $this->logger->info('Created new category', ['category_id' => $category_id, 'name' => $name, 'code' => $code, 'is_active' => $is_active]);
+
+            // Clear cache
+            $this->clear_cache();
+
             return $category_id;
         }
 
@@ -429,89 +367,11 @@ class ShopCommerce_Config {
         }
 
         $this->logger->info('Updated brand categories', ['brand_id' => $brand_id, 'category_count' => count($category_ids)]);
+
+        // Clear cache
+        $this->clear_cache();
+
         return true;
-    }
-
-    /**
-     * Build sync configuration (replaces hardcoded config)
-     *
-     * @return array Sync configuration
-     */
-    public function get_sync_config() {
-        $brands = $this->get_brands();
-        $categories = $this->get_categories();
-
-        // Build category reference
-        $category_reference = [];
-        $common_categories = [];
-
-        foreach ($categories as $category) {
-            $category_reference[$category->name] = $category->code;
-            $common_categories[] = $category->code;
-        }
-
-        // Build brand configuration
-        $brand_config = [];
-        foreach ($brands as $brand) {
-            $brand_categories = $this->get_brand_categories($brand->id);
-
-            if ($this->brand_has_all_categories($brand->id)) {
-                // Brand has all categories
-                $brand_config[$brand->name] = [];
-            } else {
-                // Brand has specific categories
-                $category_codes = [];
-                foreach ($brand_categories as $category) {
-                    $category_codes[] = $category->code;
-                }
-                $brand_config[$brand->name] = $category_codes;
-            }
-        }
-
-        return [
-            'category_reference' => $category_reference,
-            'common_corp_categories' => $common_categories,
-            'brand_config' => $brand_config,
-        ];
-    }
-
-    /**
-     * Build jobs list from dynamic configuration
-     *
-     * @return array List of sync jobs
-     */
-    public function build_jobs_list() {
-        // Use jobs store if available
-        if (isset($GLOBALS['shopcommerce_jobs_store'])) {
-            return $GLOBALS['shopcommerce_jobs_store']->get_jobs();
-        }
-
-        // Fallback to local implementation
-        $brands = $this->get_brands();
-        $jobs = [];
-
-        foreach ($brands as $brand) {
-            if ($this->brand_has_all_categories($brand->id)) {
-                $jobs[] = [
-                    'brand' => $brand->name,
-                    'brand_id' => $brand->id,
-                    'categories' => [], // Empty means all categories
-                ];
-            } else {
-                $brand_categories = $this->get_brand_categories($brand->id);
-                $category_codes = [];
-                foreach ($brand_categories as $category) {
-                    $category_codes[] = $category->code;
-                }
-                $jobs[] = [
-                    'brand' => $brand->name,
-                    'brand_id' => $brand->id,
-                    'categories' => $category_codes,
-                ];
-            }
-        }
-
-        return $jobs;
     }
 
     /**
@@ -531,6 +391,10 @@ class ShopCommerce_Config {
 
         if ($result) {
             $this->logger->info('Deleted brand', ['brand_id' => $brand_id]);
+
+            // Clear cache
+            $this->clear_cache();
+
             return true;
         }
 
@@ -554,6 +418,10 @@ class ShopCommerce_Config {
 
         if ($result) {
             $this->logger->info('Deleted category', ['category_id' => $category_id]);
+
+            // Clear cache
+            $this->clear_cache();
+
             return true;
         }
 
@@ -578,6 +446,10 @@ class ShopCommerce_Config {
 
         if ($result) {
             $this->logger->info('Toggled brand active status', ['brand_id' => $brand_id, 'active' => $active]);
+
+            // Clear cache
+            $this->clear_cache();
+
             return true;
         }
 
@@ -602,6 +474,10 @@ class ShopCommerce_Config {
 
         if ($result) {
             $this->logger->info('Toggled category active status', ['category_id' => $category_id, 'active' => $active]);
+
+            // Clear cache
+            $this->clear_cache();
+
             return true;
         }
 
@@ -748,6 +624,9 @@ class ShopCommerce_Config {
             }
         }
 
+        // Clear cache
+        $this->clear_cache();
+
         $this->logger->info('Completed creating brands from API', [
             'created' => $results['created'],
             'skipped' => $results['skipped'],
@@ -780,6 +659,9 @@ class ShopCommerce_Config {
             // Reinitialize with default data
             $this->initialize_default_data();
 
+            // Clear cache
+            $this->clear_cache();
+
             $this->logger->info('Successfully reset brands and categories to defaults');
             return true;
 
@@ -789,5 +671,175 @@ class ShopCommerce_Config {
             ]);
             return false;
         }
+    }
+
+    /**
+     * Initialize with default data if tables are empty
+     */
+    private function initialize_default_data_if_tables_empty() {
+        global $wpdb;
+
+        // Check if brands table is empty
+        $brand_count = $wpdb->get_var("SELECT COUNT(*) FROM {$this->brands_table}");
+
+        if ($brand_count == 0) {
+            $this->initialize_default_data();
+        }
+    }
+
+    /**
+     * Initialize with default hardcoded data
+     */
+    private function initialize_default_data() {
+        global $wpdb;
+
+        // Insert default brands
+        $default_brands = [
+            ['HP INC', 'hp-inc', 'HP Inc products'],
+            ['DELL', 'dell', 'Dell products'],
+            ['LENOVO', 'lenovo', 'Lenovo products'],
+            ['APPLE', 'apple', 'Apple products'],
+            ['ASUS', 'asus', 'ASUS products'],
+            ['BOSE', 'bose', 'Bose products'],
+            ['EPSON', 'epson', 'Epson products'],
+            ['JBL', 'jbl', 'JBL products'],
+        ];
+
+        foreach ($default_brands as $brand) {
+            $wpdb->insert(
+                $this->brands_table,
+                [
+                    'name' => $brand[0],
+                    'slug' => $brand[1],
+                    'description' => $brand[2],
+                ]
+            );
+        }
+
+        $this->logger->info('Initialized default brands', ['count' => count($default_brands)]);
+
+        // Insert default categories
+        $default_categories = [
+            ['Accesorios Y Perifericos', 1, 'Accessories and peripherals'],
+            ['Computadores', 7, 'Computers, laptops, workstations'],
+            ['Impresión', 12, 'Printing equipment'],
+            ['Video', 14, 'Video equipment and monitors'],
+            ['Servidores Y Almacenamiento', 18, 'Servers and storage'],
+        ];
+
+        foreach ($default_categories as $category) {
+            $wpdb->insert(
+                $this->categories_table,
+                [
+                    'name' => $category[0],
+                    'code' => $category[1],
+                    'description' => $category[2],
+                ]
+            );
+        }
+
+        $this->logger->info('Initialized default categories', ['count' => count($default_categories)]);
+
+        // Get all brands and categories
+        $brands = $wpdb->get_results("SELECT id, name FROM {$this->brands_table}");
+        $categories = $wpdb->get_results("SELECT id, code FROM {$this->categories_table}");
+
+        // Create category code mapping
+        $category_map = [];
+        foreach ($categories as $category) {
+            $category_map[$category->code] = $category->id;
+        }
+
+        // Define default brand-category relationships based on original hardcoded config
+        $default_relationships = [
+            'HP INC' => [1, 7, 12, 14, 18],
+            'DELL' => [1, 7, 12, 14, 18],
+            'LENOVO' => [1, 7, 12, 14, 18],
+            'APPLE' => [1, 7],
+            'ASUS' => [7],
+            'BOSE' => [], // All categories
+            'EPSON' => [], // All categories
+            'JBL' => [], // All categories
+        ];
+
+        foreach ($brands as $brand) {
+            $brand_name = $brand->name;
+            $brand_id = $brand->id;
+
+            if (isset($default_relationships[$brand_name])) {
+                $category_codes = $default_relationships[$brand_name];
+
+                if (empty($category_codes)) {
+                    // All categories for this brand
+                    foreach ($categories as $category) {
+                        $wpdb->insert(
+                            $this->brand_categories_table,
+                            [
+                                'brand_id' => $brand_id,
+                                'category_id' => $category->id,
+                            ]
+                        );
+                    }
+                } else {
+                    // Specific categories for this brand
+                    foreach ($category_codes as $code) {
+                        if (isset($category_map[$code])) {
+                            $wpdb->insert(
+                                $this->brand_categories_table,
+                                [
+                                    'brand_id' => $brand_id,
+                                    'category_id' => $category_map[$code],
+                                ]
+                            );
+                        }
+                    }
+                }
+            }
+        }
+
+        $this->logger->info('Initialized default brand-category relationships');
+    }
+
+    /**
+     * Build sync configuration (replaces hardcoded config)
+     *
+     * @return array Sync configuration
+     */
+    public function get_sync_config() {
+        $brands = $this->get_brands();
+        $categories = $this->get_categories();
+
+        // Build category reference
+        $category_reference = [];
+        $common_categories = [];
+
+        foreach ($categories as $category) {
+            $category_reference[$category->name] = $category->code;
+            $common_categories[] = $category->code;
+        }
+
+        // Build brand configuration
+        $brand_config = [];
+        foreach ($brands as $brand) {
+            $brand_categories = $this->get_brand_categories($brand->id);
+
+            if ($this->brand_has_all_categories($brand->id)) {
+                // Brand has all categories
+                $brand_config[$brand->name] = [];
+            } else {
+                // Brand has specific categories
+                $category_codes = [];
+                foreach ($brand_categories as $category) {
+                    $category_codes[] = $category->code;
+                }
+                $brand_config[$brand->name] = $category_codes;
+            }
+        }
+
+        return [
+            'category_reference' => $category_reference,
+            'common_corp_categories' => $common_categories,
+            'brand_config' => $brand_config,
+        ];
     }
 }

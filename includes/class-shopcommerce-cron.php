@@ -32,16 +32,23 @@ class ShopCommerce_Cron {
     private $logger;
 
     /**
+     * Jobs store instance
+     */
+    private $jobs_store;
+
+    /**
      * Constructor
      *
      * @param ShopCommerce_Logger $logger Logger instance
+     * @param ShopCommerce_Jobs_Store $jobs_store Jobs store instance
      */
-    public function __construct($logger) {
+    public function __construct($logger, $jobs_store = null) {
         $this->logger = $logger;
+        $this->jobs_store = $jobs_store;
 
         // Register custom schedules IMMEDIATELY - this is crucial
         add_filter('cron_schedules', [$this, 'register_cron_schedules']);
-        
+
         // Register the main cron action
         add_action(self::HOOK_NAME, [$this, 'execute_sync_hook']);
     }
@@ -304,7 +311,12 @@ class ShopCommerce_Cron {
      * @return array List of sync jobs
      */
     public function build_jobs_list() {
-        // Use dynamic configuration from config manager
+        // Use jobs store if available
+        if ($this->jobs_store) {
+            return $this->jobs_store->get_jobs();
+        }
+
+        // Fallback to dynamic configuration from config manager
         if (isset($GLOBALS['shopcommerce_config'])) {
             $config = $GLOBALS['shopcommerce_config'];
             return $config->build_jobs_list();

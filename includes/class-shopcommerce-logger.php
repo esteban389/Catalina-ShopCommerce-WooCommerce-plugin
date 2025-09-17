@@ -49,7 +49,7 @@ class ShopCommerce_Logger {
      * @return string Current logging level
      */
     public function get_log_level() {
-        return get_option('shopcommerce_log_level', self::LEVEL_INFO);
+        return get_option('shopcommerce_log_level', self::LEVEL_DEBUG);
     }
 
     /**
@@ -329,7 +329,7 @@ class ShopCommerce_Logger {
         $log_line = json_encode($log_entry) . PHP_EOL;
 
         // Append to log file
-        //file_put_contents($log_file, $log_line, FILE_APPEND);
+        file_put_contents($log_file, $log_line, FILE_APPEND);
     }
 
     /**

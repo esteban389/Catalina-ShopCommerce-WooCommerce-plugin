@@ -1413,6 +1413,23 @@ function shopcommerce_ajax_get_product_details() {
 }
 
 /**
+ * Helper function to clear jobs store cache and rebuild jobs
+ */
+function shopcommerce_clear_cache_and_rebuild_jobs() {
+    // Clear jobs store cache
+    if (isset($GLOBALS['shopcommerce_jobs_store'])) {
+        $GLOBALS['shopcommerce_jobs_store']->clear_cache();
+    }
+
+    // Rebuild jobs
+    if (isset($GLOBALS['shopcommerce_cron'])) {
+        return $GLOBALS['shopcommerce_cron']->rebuild_jobs();
+    }
+
+    return false;
+}
+
+/**
  * AJAX handler for creating a brand
  */
 function shopcommerce_ajax_create_brand() {
@@ -1422,9 +1439,12 @@ function shopcommerce_ajax_create_brand() {
         wp_send_json_error(['message' => 'Insufficient permissions']);
     }
 
+    // Use jobs store if available, fallback to config
+    $jobs_store = isset($GLOBALS['shopcommerce_jobs_store']) ? $GLOBALS['shopcommerce_jobs_store'] : null;
     $config = isset($GLOBALS['shopcommerce_config']) ? $GLOBALS['shopcommerce_config'] : null;
-    if (!$config) {
-        wp_send_json_error(['message' => 'Configuration manager not available']);
+
+    if (!$jobs_store && !$config) {
+        wp_send_json_error(['message' => 'Neither jobs store nor configuration manager available']);
     }
 
     $name = isset($_POST['name']) ? sanitize_text_field($_POST['name']) : '';
@@ -1434,13 +1454,16 @@ function shopcommerce_ajax_create_brand() {
         wp_send_json_error(['message' => 'Brand name is required']);
     }
 
-    $brand_id = $config->create_brand($name, $description);
+    // Use jobs store if available, fallback to config
+    if ($jobs_store) {
+        $brand_id = $jobs_store->create_brand($name, $description);
+    } else {
+        $brand_id = $config->create_brand($name, $description);
+    }
 
     if ($brand_id) {
-        // Rebuild jobs after brand creation
-        if (isset($GLOBALS['shopcommerce_cron'])) {
-            $GLOBALS['shopcommerce_cron']->rebuild_jobs();
-        }
+        // Clear cache and rebuild jobs after brand creation
+        shopcommerce_clear_cache_and_rebuild_jobs();
 
         wp_send_json_success([
             'message' => 'Brand created successfully',
@@ -1483,10 +1506,8 @@ function shopcommerce_ajax_update_brand() {
     $success = $config->update_brand($brand_id, $name, $description);
 
     if ($success) {
-        // Rebuild jobs after brand update
-        if (isset($GLOBALS['shopcommerce_cron'])) {
-            $GLOBALS['shopcommerce_cron']->rebuild_jobs();
-        }
+        // Clear cache and rebuild jobs after brand update
+        shopcommerce_clear_cache_and_rebuild_jobs();
 
         wp_send_json_success(['message' => 'Brand updated successfully']);
     } else {
@@ -1504,9 +1525,12 @@ function shopcommerce_ajax_update_brand_categories() {
         wp_send_json_error(['message' => 'Insufficient permissions']);
     }
 
+    // Use jobs store if available, fallback to config
+    $jobs_store = isset($GLOBALS['shopcommerce_jobs_store']) ? $GLOBALS['shopcommerce_jobs_store'] : null;
     $config = isset($GLOBALS['shopcommerce_config']) ? $GLOBALS['shopcommerce_config'] : null;
-    if (!$config) {
-        wp_send_json_error(['message' => 'Configuration manager not available']);
+
+    if (!$jobs_store && !$config) {
+        wp_send_json_error(['message' => 'Neither jobs store nor configuration manager available']);
     }
 
     $brand_id = isset($_POST['brand_id']) ? intval($_POST['brand_id']) : 0;
@@ -1516,13 +1540,16 @@ function shopcommerce_ajax_update_brand_categories() {
         wp_send_json_error(['message' => 'Invalid brand ID']);
     }
 
-    $success = $config->update_brand_categories($brand_id, $category_ids);
+    // Use jobs store if available, fallback to config
+    if ($jobs_store) {
+        $success = $jobs_store->update_brand_categories($brand_id, $category_ids);
+    } else {
+        $success = $config->update_brand_categories($brand_id, $category_ids);
+    }
 
     if ($success) {
-        // Rebuild jobs after brand categories update
-        if (isset($GLOBALS['shopcommerce_cron'])) {
-            $GLOBALS['shopcommerce_cron']->rebuild_jobs();
-        }
+        // Clear cache and rebuild jobs after brand categories update
+        shopcommerce_clear_cache_and_rebuild_jobs();
 
         wp_send_json_success(['message' => 'Brand categories updated successfully']);
     } else {
@@ -1554,10 +1581,8 @@ function shopcommerce_ajax_delete_brand() {
     $success = $config->delete_brand($brand_id);
 
     if ($success) {
-        // Rebuild jobs after brand deletion
-        if (isset($GLOBALS['shopcommerce_cron'])) {
-            $GLOBALS['shopcommerce_cron']->rebuild_jobs();
-        }
+        // Clear cache and rebuild jobs after brand deletion
+        shopcommerce_clear_cache_and_rebuild_jobs();
 
         wp_send_json_success(['message' => 'Brand deleted successfully']);
     } else {
@@ -1590,6 +1615,9 @@ function shopcommerce_ajax_toggle_brand() {
     $success = $config->toggle_brand_active($brand_id, $active);
 
     if ($success) {
+        // Clear cache and rebuild jobs after brand toggle
+        shopcommerce_clear_cache_and_rebuild_jobs();
+
         wp_send_json_success(['message' => 'Brand status updated successfully']);
     } else {
         wp_send_json_error(['message' => 'Failed to update brand status']);
@@ -1606,9 +1634,12 @@ function shopcommerce_ajax_create_category() {
         wp_send_json_error(['message' => 'Insufficient permissions']);
     }
 
+    // Use jobs store if available, fallback to config
+    $jobs_store = isset($GLOBALS['shopcommerce_jobs_store']) ? $GLOBALS['shopcommerce_jobs_store'] : null;
     $config = isset($GLOBALS['shopcommerce_config']) ? $GLOBALS['shopcommerce_config'] : null;
-    if (!$config) {
-        wp_send_json_error(['message' => 'Configuration manager not available']);
+
+    if (!$jobs_store && !$config) {
+        wp_send_json_error(['message' => 'Neither jobs store nor configuration manager available']);
     }
 
     $name = isset($_POST['name']) ? sanitize_text_field($_POST['name']) : '';
@@ -1619,13 +1650,16 @@ function shopcommerce_ajax_create_category() {
         wp_send_json_error(['message' => 'Category name and code are required']);
     }
 
-    $category_id = $config->create_category($name, $code, $description);
+    // Use jobs store if available, fallback to config
+    if ($jobs_store) {
+        $category_id = $jobs_store->create_category($name, $code, $description);
+    } else {
+        $category_id = $config->create_category($name, $code, $description);
+    }
 
     if ($category_id) {
-        // Rebuild jobs after category creation
-        if (isset($GLOBALS['shopcommerce_cron'])) {
-            $GLOBALS['shopcommerce_cron']->rebuild_jobs();
-        }
+        // Clear cache and rebuild jobs after category creation
+        shopcommerce_clear_cache_and_rebuild_jobs();
 
         wp_send_json_success([
             'message' => 'Category created successfully',
@@ -1667,10 +1701,8 @@ function shopcommerce_ajax_delete_category() {
     $success = $config->delete_category($category_id);
 
     if ($success) {
-        // Rebuild jobs after category deletion
-        if (isset($GLOBALS['shopcommerce_cron'])) {
-            $GLOBALS['shopcommerce_cron']->rebuild_jobs();
-        }
+        // Clear cache and rebuild jobs after category deletion
+        shopcommerce_clear_cache_and_rebuild_jobs();
 
         wp_send_json_success(['message' => 'Category deleted successfully']);
     } else {
@@ -1703,6 +1735,9 @@ function shopcommerce_ajax_toggle_category() {
     $success = $config->toggle_category_active($category_id, $active);
 
     if ($success) {
+        // Clear cache and rebuild jobs after category toggle
+        shopcommerce_clear_cache_and_rebuild_jobs();
+
         wp_send_json_success(['message' => 'Category status updated successfully']);
     } else {
         wp_send_json_error(['message' => 'Failed to update category status']);
@@ -1719,9 +1754,12 @@ function shopcommerce_ajax_get_brand_categories() {
         wp_send_json_error(['message' => 'Insufficient permissions']);
     }
 
+    // Use jobs store if available, fallback to config
+    $jobs_store = isset($GLOBALS['shopcommerce_jobs_store']) ? $GLOBALS['shopcommerce_jobs_store'] : null;
     $config = isset($GLOBALS['shopcommerce_config']) ? $GLOBALS['shopcommerce_config'] : null;
-    if (!$config) {
-        wp_send_json_error(['message' => 'Configuration manager not available']);
+
+    if (!$jobs_store && !$config) {
+        wp_send_json_error(['message' => 'Neither jobs store nor configuration manager available']);
     }
 
     $brand_id = isset($_POST['brand_id']) ? intval($_POST['brand_id']) : 0;
@@ -1729,8 +1767,14 @@ function shopcommerce_ajax_get_brand_categories() {
         wp_send_json_error(['message' => 'Invalid brand ID']);
     }
 
-    $brand_categories = $config->get_brand_categories($brand_id);
-    $has_all_categories = $config->brand_has_all_categories($brand_id);
+    // Use jobs store if available, fallback to config
+    if ($jobs_store) {
+        $brand_categories = $jobs_store->get_brand_categories($brand_id);
+        $has_all_categories = $jobs_store->brand_has_all_categories($brand_id);
+    } else {
+        $brand_categories = $config->get_brand_categories($brand_id);
+        $has_all_categories = $config->brand_has_all_categories($brand_id);
+    }
 
     wp_send_json_success([
         'brand_id' => $brand_id,
@@ -2438,10 +2482,12 @@ function shopcommerce_ajax_fetch_api_brands() {
         wp_send_json_error(["message" => "API client not available"]);
     }
 
-    // Get config manager
+    // Use jobs store if available, fallback to config
+    $jobs_store = isset($GLOBALS["shopcommerce_jobs_store"]) ? $GLOBALS["shopcommerce_jobs_store"] : null;
     $config = isset($GLOBALS["shopcommerce_config"]) ? $GLOBALS["shopcommerce_config"] : null;
-    if (!$config) {
-        wp_send_json_error(["message" => "Configuration manager not available"]);
+
+    if (!$jobs_store && !$config) {
+        wp_send_json_error(["message" => "Neither jobs store nor configuration manager available"]);
     }
 
     // Fetch brands from API
@@ -2451,7 +2497,11 @@ function shopcommerce_ajax_fetch_api_brands() {
     }
 
     // Process brands and create new ones
-    $result = $config->create_brands_from_api($api_brands);
+    if ($jobs_store) {
+        $result = $jobs_store->create_brands_from_api($api_brands);
+    } else {
+        $result = $config->create_brands_from_api($api_brands);
+    }
 
     wp_send_json_success([
         "message" => sprintf(
