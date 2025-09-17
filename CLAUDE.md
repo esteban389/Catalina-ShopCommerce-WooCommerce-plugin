@@ -51,7 +51,7 @@ The plugin follows a modular architecture with recent additions:
 - **Token Endpoint**: `/Token`
 - **Catalog Endpoint**: `/api/Webapi/VerCatalogo`
 - **Timeout**: 14 minutes (840 seconds) for API requests
-- **Credentials**: Currently hardcoded in `class-shopcommerce-api.php:33-34`
+- **Credentials**: Currently hardcoded in `includes/class-shopcommerce-api.php:33-34`
 
 ### Scheduling System
 - Uses WordPress cron jobs with `wp_schedule_event()`
@@ -92,7 +92,7 @@ Since this is a WordPress plugin without a build system, development involves:
 - **Dashboard**: ShopCommerce Sync → Dashboard
 - **Products**: ShopCommerce Sync → Products
 - **Orders**: ShopCommerce Sync → Orders (NEW)
-- **Brands**: ShopCommerce Sync → Brands (NEW)
+- **Brands & Categories**: ShopCommerce Sync → Brands & Categories (NEW)
 - **Sync Control**: ShopCommerce Sync → Sync Control
 - **Settings**: ShopCommerce Sync → Settings
 - **Logs**: ShopCommerce Sync → Logs (ENHANCED)
@@ -149,7 +149,7 @@ Since this is a WordPress plugin without a build system, development involves:
 - **Dashboard**: Overview with statistics, quick actions, and recent activity
 - **Products**: Product management and filtering
 - **Orders**: Order management with external provider detection (NEW)
-- **Brands**: Brand configuration management (NEW)
+- **Brands & Categories**: Brand and category configuration management (NEW)
 - **Sync Control**: Manual sync operations and queue management
 - **Settings**: Configuration for API, sync behavior, and logging
 - **Logs**: Enhanced activity log viewing and management (ENHANCED)
@@ -184,10 +184,10 @@ Since this is a WordPress plugin without a build system, development involves:
 
 ## Version Information
 
-- **Current Version**: 2.4.0 (as defined in index.php plugin header)
+- **Current Version**: 2.5.0 (as defined in index.php plugin header)
 - **Architecture Version**: 2.0.0+ (modular rewrite)
 - **Compatibility**: WordPress 5.0+, WooCommerce 3.0+, PHP 7.2+
-- **Note**: Version constant in index.php shows 2.0.0 but plugin header defines 2.4.0
+- **Note**: Version constant in index.php shows 2.0.0 but plugin header defines 2.5.0
 
 ## Database Schema
 
@@ -205,3 +205,17 @@ The plugin creates custom database tables for configuration management:
 - Includes automatic initialization with default hardcoded brand/category relationships
 - Supports creating brands from API responses with duplicate detection
 - Provides reset functionality to restore default configuration
+
+## Important Implementation Details
+
+### WooCommerce Integration
+- **Order Hooks**: Integrates with WooCommerce order lifecycle (creation, processing, completion)
+- **Product Detection**: Automatically detects external provider products in orders
+- **Metadata Tracking**: Stores provider information in order item metadata
+- **Logging**: Comprehensive logging of order processing and external product detection
+
+### Global Instance Management
+- All core classes are instantiated globally during plugin initialization
+- Available as `$GLOBALS['shopcommerce_*']` variables
+- Follows dependency injection pattern for class instantiation
+- Logger is always initialized first to ensure proper logging throughout the system
