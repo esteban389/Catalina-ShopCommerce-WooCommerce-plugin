@@ -99,10 +99,7 @@ $current_tab = isset($_GET['tab']) ? sanitize_text_field($_GET['tab']) : 'brands
                                             <span class="badge badge-success">All Categories (<?php echo $total_categories; ?>)</span>
                                         <?php else: ?>
                                             <span class="badge badge-info"><?php echo $category_count; ?> Categories</span>
-                                            <button type="button" class="button-link edit-categories-btn" data-brand-id="<?php echo $brand->id; ?>" data-brand-name="<?php echo esc_attr($brand->name); ?>">
-                                                Edit
-                                            </button>
-                                        <?php endif; ?>
+                                                                                    <?php endif; ?>
                                     </td>
                                     <td>
                                         <span class="status-badge <?php echo $brand->is_active ? 'status-active' : 'status-inactive'; ?>">
@@ -111,10 +108,6 @@ $current_tab = isset($_GET['tab']) ? sanitize_text_field($_GET['tab']) : 'brands
                                     </td>
                                     <td>
                                         <div class="row-actions visible">
-                                            <button type="button" class="button-link edit-brand-btn" data-brand-id="<?php echo $brand->id; ?>">
-                                                Edit
-                                            </button>
-                                            |
                                             <button type="button" class="button-link toggle-brand-btn" data-brand-id="<?php echo $brand->id; ?>" data-active="<?php echo $brand->is_active; ?>">
                                                 <?php echo $brand->is_active ? 'Deactivate' : 'Activate'; ?>
                                             </button>
@@ -147,10 +140,7 @@ $current_tab = isset($_GET['tab']) ? sanitize_text_field($_GET['tab']) : 'brands
                             <span class="dashicons dashicons-update"></span>
                             Sync Categories from API
                         </button>
-                        <button type="button" class="button button-primary" id="add-category-btn">
-                            Add New Category
-                        </button>
-                    </div>
+                                            </div>
                 </div>
 
                 <!-- Categories Table -->
@@ -184,10 +174,6 @@ $current_tab = isset($_GET['tab']) ? sanitize_text_field($_GET['tab']) : 'brands
                                     </td>
                                     <td>
                                         <div class="row-actions visible">
-                                            <button type="button" class="button-link edit-category-btn" data-category-id="<?php echo $category->id; ?>">
-                                                Edit
-                                            </button>
-                                            |
                                             <button type="button" class="button-link toggle-category-btn" data-category-id="<?php echo $category->id; ?>" data-active="<?php echo $category->is_active; ?>">
                                                 <?php echo $category->is_active ? 'Deactivate' : 'Activate'; ?>
                                             </button>
@@ -269,12 +255,7 @@ $current_tab = isset($_GET['tab']) ? sanitize_text_field($_GET['tab']) : 'brands
                                                 <?php endif; ?>
                                             </div>
                                         </div>
-                                        <div class="job-actions">
-                                            <button type="button" class="button edit-job-categories-btn" data-brand-id="<?php echo $job['brand_id']; ?>" data-brand-name="<?php echo esc_attr($job['brand']); ?>">
-                                                Configure Categories
-                                            </button>
-                                        </div>
-                                    </div>
+                                                                            </div>
                                 <?php endforeach; ?>
                             </div>
                         <?php else: ?>
@@ -313,80 +294,6 @@ $current_tab = isset($_GET['tab']) ? sanitize_text_field($_GET['tab']) : 'brands
                 </div>
                 <div class="form-actions">
                     <button type="submit" class="button button-primary">Save Brand</button>
-                    <button type="button" class="button close-modal-btn">Cancel</button>
-                </div>
-            </form>
-        </div>
-    </div>
-</div>
-
-<!-- Category Modal -->
-<div id="category-modal" class="shopcommerce-modal" style="display: none;">
-    <div class="modal-content">
-        <div class="modal-header">
-            <h3 id="category-modal-title">Add New Category</h3>
-            <button type="button" class="close-modal">&times;</button>
-        </div>
-        <div class="modal-body">
-            <form id="category-form">
-                <input type="hidden" name="category_id" id="category-id" value="">
-                <div class="form-row">
-                    <label for="category-name">Category Name *</label>
-                    <input type="text" name="name" id="category-name" class="regular-text" required>
-                </div>
-                <div class="form-row">
-                    <label for="category-code">Category Code *</label>
-                    <input type="number" name="code" id="category-code" class="small-text" required>
-                    <p class="description">Numeric code used by the ShopCommerce API</p>
-                </div>
-                <div class="form-row">
-                    <label for="category-description">Description</label>
-                    <textarea name="description" id="category-description" class="large-text" rows="3"></textarea>
-                </div>
-                <div class="form-actions">
-                    <button type="submit" class="button button-primary">Save Category</button>
-                    <button type="button" class="button close-modal-btn">Cancel</button>
-                </div>
-            </form>
-        </div>
-    </div>
-</div>
-
-<!-- Brand Categories Modal -->
-<div id="brand-categories-modal" class="shopcommerce-modal" style="display: none;">
-    <div class="modal-content">
-        <div class="modal-header">
-            <h3 id="brand-categories-modal-title">Configure Brand Categories</h3>
-            <button type="button" class="close-modal">&times;</button>
-        </div>
-        <div class="modal-body">
-            <form id="brand-categories-form">
-                <input type="hidden" name="brand_id" id="brand-categories-brand-id" value="">
-                <input type="hidden" name="brand_name" id="brand-categories-brand-name" value="">
-
-                <div class="form-row">
-                    <p>Select which categories this brand should sync:</p>
-
-                    <div class="categories-selection">
-                        <label>
-                            <input type="checkbox" name="all_categories" id="all-categories" value="1">
-                            <strong>All Categories (includes future categories)</strong>
-                        </label>
-
-                        <div class="individual-categories">
-                            <h4>Or select specific categories:</h4>
-                            <?php foreach ($active_categories as $category): ?>
-                                <label>
-                                    <input type="checkbox" name="category_ids[]" value="<?php echo $category->id; ?>" class="category-checkbox">
-                                    <?php echo esc_html($category->name); ?> (Code: <?php echo $category->code; ?>)
-                                </label>
-                            <?php endforeach; ?>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="form-actions">
-                    <button type="submit" class="button button-primary">Save Configuration</button>
                     <button type="button" class="button close-modal-btn">Cancel</button>
                 </div>
             </form>
@@ -643,163 +550,8 @@ jQuery(document).ready(function($) {
         openModal('brand-modal');
     });
 
-    $('.edit-brand-btn').on('click', function() {
-        var brandId = $(this).data('brand-id');
-
-        // Load brand data (simplified - in real implementation you'd load from server)
-        $('#brand-modal-title').text('Edit Brand');
-        $('#brand-id').val(brandId);
-        // You would load the brand data here via AJAX
-        openModal('brand-modal');
-    });
-
-    $('#brand-form').on('submit', function(e) {
-        e.preventDefault();
-
-        var formData = $(this).serialize();
-        var brandId = $('#brand-id').val();
-
-        $.ajax({
-            url: shopcommerce_admin.ajax_url,
-            type: 'POST',
-            data: {
-                action: brandId ? 'shopcommerce_ajax_update_brand' : 'shopcommerce_create_brand',
-                nonce: shopcommerce_admin.nonce,
-                ...Object.fromEntries(new FormData(this))
-            },
-            success: function(response) {
-                if (response.success) {
-                    location.reload();
-                } else {
-                    alert('Error: ' + response.data.error);
-                }
-            },
-            error: function() {
-                alert('Network error occurred.');
-            }
-        });
-    });
-
-    // Brand categories management
-    $('.edit-categories-btn, .edit-job-categories-btn').on('click', function() {
-        var brandId = $(this).data('brand-id');
-        var brandName = $(this).data('brand-name');
-
-        $('#brand-categories-modal-title').text('Configure Categories for ' + brandName);
-        $('#brand-categories-brand-id').val(brandId);
-        $('#brand-categories-brand-name').val(brandName);
-
-        // Load current categories for this brand via AJAX
-        $.ajax({
-            url: shopcommerce_admin.ajax_url,
-            type: 'POST',
-            data: {
-                action: 'shopcommerce_get_brand_categories',
-                nonce: shopcommerce_admin.nonce,
-                brand_id: brandId
-            },
-            success: function(response) {
-                if (response.success) {
-                    // Update checkboxes based on response
-                    $('.category-checkbox').prop('checked', false);
-                    $('#all-categories').prop('checked', response.data.has_all_categories);
-
-                    if (!response.data.has_all_categories) {
-                        response.data.categories.forEach(function(categoryId) {
-                            $('.category-checkbox[value="' + categoryId + '"]').prop('checked', true);
-                        });
-                    }
-                }
-            }
-        });
-
-        openModal('brand-categories-modal');
-    });
-
-    // Toggle all categories checkbox
-    $('#all-categories').on('change', function() {
-        $('.category-checkbox').prop('disabled', $(this).prop('checked'));
-    });
-
-    $('#brand-categories-form').on('submit', function(e) {
-        e.preventDefault();
-
-        var brandId = $('#brand-categories-brand-id').val();
-        var allCategories = $('#all-categories').prop('checked');
-        var categoryIds = [];
-
-        if (!allCategories) {
-            $('.category-checkbox:checked').each(function() {
-                categoryIds.push($(this).val());
-            });
-        }
-
-        $.ajax({
-            url: shopcommerce_admin.ajax_url,
-            type: 'POST',
-            data: {
-                action: 'shopcommerce_update_brand_categories',
-                nonce: shopcommerce_admin.nonce,
-                brand_id: brandId,
-                category_ids: categoryIds
-            },
-            success: function(response) {
-                if (response.success) {
-                    location.reload();
-                } else {
-                    alert('Error: ' + response.data.error);
-                }
-            },
-            error: function() {
-                alert('Network error occurred.');
-            }
-        });
-    });
-
-    // Category management
-    $('#add-category-btn').on('click', function() {
-        $('#category-modal-title').text('Add New Category');
-        $('#category-form')[0].reset();
-        $('#category-id').val('');
-        openModal('category-modal');
-    });
-
-    $('.edit-category-btn').on('click', function() {
-        var categoryId = $(this).data('category-id');
-
-        $('#category-modal-title').text('Edit Category');
-        $('#category-id').val(categoryId);
-        // You would load the category data here via AJAX
-        openModal('category-modal');
-    });
-
-    $('#category-form').on('submit', function(e) {
-        e.preventDefault();
-
-        var formData = $(this).serialize();
-        var categoryId = $('#category-id').val();
-
-        $.ajax({
-            url: shopcommerce_admin.ajax_url,
-            type: 'POST',
-            data: {
-                action: categoryId ? 'shopcommerce_update_category' : 'shopcommerce_create_category',
-                nonce: shopcommerce_admin.nonce,
-                ...Object.fromEntries(new FormData(this))
-            },
-            success: function(response) {
-                if (response.success) {
-                    location.reload();
-                } else {
-                    alert('Error: ' + response.data.error);
-                }
-            },
-            error: function() {
-                alert('Network error occurred.');
-            }
-        });
-    });
-
+    
+    
     // Toggle functions
     $('.toggle-brand-btn').on('click', function() {
         var brandId = $(this).data('brand-id');

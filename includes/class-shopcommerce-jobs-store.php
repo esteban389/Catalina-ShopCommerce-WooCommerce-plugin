@@ -118,6 +118,21 @@ class ShopCommerce_Jobs_Store {
     }
 
     /**
+     * Get a single brand by ID
+     *
+     * @param int $brand_id Brand ID
+     * @return object|null Brand object or null if not found
+     */
+    public function get_brand($brand_id) {
+        global $wpdb;
+
+        return $wpdb->get_row($wpdb->prepare(
+            "SELECT * FROM {$this->brands_table} WHERE id = %d",
+            $brand_id
+        ));
+    }
+
+    /**
      * Get all categories
      *
      * @param bool $active_only Only return active categories
@@ -185,10 +200,16 @@ class ShopCommerce_Jobs_Store {
 
         foreach ($brands as $brand) {
             if ($this->brand_has_all_categories($brand->id)) {
+                // Get all available categories instead of empty array
+                $all_categories = $this->get_categories();
+                $category_codes = [];
+                foreach ($all_categories as $category) {
+                    $category_codes[] = $category->code;
+                }
                 $jobs[] = [
                     'brand' => $brand->name,
                     'brand_id' => $brand->id,
-                    'categories' => [], // Empty means all categories
+                    'categories' => $category_codes, // All activated categories
                 ];
             } else {
                 $brand_categories = $this->get_brand_categories($brand->id);
@@ -218,6 +239,74 @@ class ShopCommerce_Jobs_Store {
         $this->jobs_cache = null;
         $this->cache_timestamp = 0;
         $this->logger->debug('Cleared jobs store cache');
+    }
+
+    /**
+     * Update an existing brand
+     *
+     * @param int $brand_id Brand ID
+     * @param string $name Brand name
+     * @param string $description Brand description
+     * @return bool Success status
+     */
+    public function update_brand($brand_id, $name, $description = '') {
+        global $wpdb;
+
+        // Check if brand exists
+        $existing_brand = $wpdb->get_row($wpdb->prepare(
+            "SELECT id, name, slug FROM {$this->brands_table} WHERE id = %d",
+            $brand_id
+        ));
+
+        if (!$existing_brand) {
+            $this->logger->warning('Brand not found for update', ['brand_id' => $brand_id]);
+            return false;
+        }
+
+        // Generate new slug if name changed
+        $new_slug = sanitize_title($name);
+        if ($new_slug !== $existing_brand->slug) {
+            // Check if new slug conflicts with another brand
+            $slug_conflict = $wpdb->get_var($wpdb->prepare(
+                "SELECT id FROM {$this->brands_table} WHERE slug = %s AND id != %d",
+                $new_slug,
+                $brand_id
+            ));
+
+            if ($slug_conflict) {
+                $this->logger->warning('Brand slug conflict during update', [
+                    'brand_id' => $brand_id,
+                    'new_name' => $name,
+                    'new_slug' => $new_slug
+                ]);
+                return false;
+            }
+        }
+
+        $result = $wpdb->update(
+            $this->brands_table,
+            [
+                'name' => $name,
+                'slug' => $new_slug,
+                'description' => $description,
+            ],
+            ['id' => $brand_id]
+        );
+
+        if ($result) {
+            $this->logger->info('Updated brand', [
+                'brand_id' => $brand_id,
+                'name' => $name,
+                'slug' => $new_slug
+            ]);
+
+            // Clear cache
+            $this->clear_cache();
+
+            return true;
+        }
+
+        return false;
     }
 
     /**

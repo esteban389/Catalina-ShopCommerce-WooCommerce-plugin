@@ -792,10 +792,19 @@ class ShopCommerce_Helpers
         $jobs = [];
 
         foreach ($config['brand_config'] as $brand => $categories) {
-            $jobs[] = [
-                'brand' => $brand,
-                'categories' => $categories,  // empty array means all categories
-            ];
+            if (empty($categories)) {
+                // For brands with all categories, use all available category codes
+                $all_category_codes = [1, 7, 12, 14, 18]; // All active categories from the config
+                $jobs[] = [
+                    'brand' => $brand,
+                    'categories' => $all_category_codes,
+                ];
+            } else {
+                $jobs[] = [
+                    'brand' => $brand,
+                    'categories' => $categories,
+                ];
+            }
         }
 
         return $jobs;

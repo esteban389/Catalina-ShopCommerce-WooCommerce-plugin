@@ -342,6 +342,26 @@ class ShopCommerce_Cron {
                 'brand' => 'LENOVO',
                 'categories' => [1, 7, 12, 14, 18],
             ],
+            [
+                'brand' => 'APPLE',
+                'categories' => [1, 7],
+            ],
+            [
+                'brand' => 'ASUS',
+                'categories' => [7],
+            ],
+            [
+                'brand' => 'BOSE',
+                'categories' => [1, 7, 12, 14, 18], // All categories
+            ],
+            [
+                'brand' => 'EPSON',
+                'categories' => [1, 7, 12, 14, 18], // All categories
+            ],
+            [
+                'brand' => 'JBL',
+                'categories' => [1, 7, 12, 14, 18], // All categories
+            ],
         ];
     }
 
