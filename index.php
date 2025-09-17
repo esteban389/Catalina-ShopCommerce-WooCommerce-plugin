@@ -105,6 +105,9 @@ add_action('woocommerce_order_status_processing', 'shopcommerce_handle_order_com
 // Hook into order creation for logging
 add_action('woocommerce_new_order', 'shopcommerce_handle_order_creation');
 
+// Hook for automatic log clearing
+add_action('shopcommerce_clear_logs', 'shopcommerce_clear_logs_scheduled');
+
 // Plugin deactivation hook
 register_deactivation_hook(__FILE__, 'shopcommerce_sync_deactivate');
 

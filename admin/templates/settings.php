@@ -127,23 +127,48 @@ if (!defined('ABSPATH')) {
             </tr>
             <tr>
                 <th scope="row">
-                    <label for="shopcommerce_enable_logging">Enable Detailed Logging</label>
+                    <label for="shopcommerce_log_level">Logging Level</label>
                 </th>
                 <td>
-                    <input type="checkbox" id="shopcommerce_enable_logging" name="shopcommerce_enable_logging"
-                           value="1" <?php checked(get_option('shopcommerce_enable_logging', '1')); ?>>
-                    <p class="description">Enable detailed logging for debugging purposes.</p>
+                    <select id="shopcommerce_log_level" name="shopcommerce_log_level">
+                        <option value="debug" <?php selected(get_option('shopcommerce_log_level', 'info'), 'debug'); ?>>
+                            Debug (All logs) - Clear daily
+                        </option>
+                        <option value="info" <?php selected(get_option('shopcommerce_log_level', 'info'), 'info'); ?>>
+                            Info - Clear daily
+                        </option>
+                        <option value="warning" <?php selected(get_option('shopcommerce_log_level', 'info'), 'warning'); ?>>
+                            Warning - Clear every 7 days
+                        </option>
+                        <option value="error" <?php selected(get_option('shopcommerce_log_level', 'info'), 'error'); ?>>
+                            Error - Clear every 30 days
+                        </option>
+                        <option value="critical" <?php selected(get_option('shopcommerce_log_level', 'info'), 'critical'); ?>>
+                            Critical Only - Clear every 30 days
+                        </option>
+                    </select>
+                    <p class="description">Select the minimum logging level. Higher levels reduce log volume and extend retention period.</p>
                 </td>
             </tr>
             <tr>
                 <th scope="row">
-                    <label for="shopcommerce_log_retention_days">Log Retention (days)</label>
+                    <label for="shopcommerce_enable_file_logging">Enable File Logging</label>
                 </th>
                 <td>
-                    <input type="number" id="shopcommerce_log_retention_days" name="shopcommerce_log_retention_days"
-                           value="<?php echo esc_attr(get_option('shopcommerce_log_retention_days', '30')); ?>"
+                    <input type="checkbox" id="shopcommerce_enable_file_logging" name="shopcommerce_enable_file_logging"
+                           value="1" <?php checked(get_option('shopcommerce_enable_file_logging', '1')); ?>>
+                    <p class="description">Enable logging to file for persistent storage.</p>
+                </td>
+            </tr>
+            <tr>
+                <th scope="row">
+                    <label for="shopcommerce_activity_log_retention">Activity Log Retention (days)</label>
+                </th>
+                <td>
+                    <input type="number" id="shopcommerce_activity_log_retention" name="shopcommerce_activity_log_retention"
+                           value="<?php echo esc_attr(get_option('shopcommerce_activity_log_retention', '30')); ?>"
                            min="1" max="365" class="small-text">
-                    <p class="description">How many days to keep activity logs (default: 30).</p>
+                    <p class="description">How many days to keep activity logs in database (default: 30).</p>
                 </td>
             </tr>
         </table>

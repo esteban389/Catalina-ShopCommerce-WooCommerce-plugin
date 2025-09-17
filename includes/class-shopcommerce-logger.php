@@ -38,6 +38,78 @@ class ShopCommerce_Logger {
         if (!file_exists(SHOPCOMMERCE_SYNC_LOGS_DIR)) {
             wp_mkdir_p(SHOPCOMMERCE_SYNC_LOGS_DIR);
         }
+
+        // Schedule log clearing if not already scheduled
+        $this->schedule_log_clearing();
+    }
+
+    /**
+     * Get the current logging level
+     *
+     * @return string Current logging level
+     */
+    public function get_log_level() {
+        return get_option('shopcommerce_log_level', self::LEVEL_INFO);
+    }
+
+    /**
+     * Check if a log level should be logged based on the current setting
+     *
+     * @param string $level Log level to check
+     * @return bool Whether to log this level
+     */
+    public function should_log($level) {
+        $current_level = $this->get_log_level();
+        $levels = [
+            self::LEVEL_DEBUG => 0,
+            self::LEVEL_INFO => 1,
+            self::LEVEL_WARNING => 2,
+            self::LEVEL_ERROR => 3,
+            self::LEVEL_CRITICAL => 4
+        ];
+
+        $current_priority = $levels[$current_level] ?? 1;
+        $level_priority = $levels[$level] ?? 1;
+
+        return $level_priority >= $current_priority;
+    }
+
+    /**
+     * Get the log clearing interval based on log level
+     *
+     * @return int Interval in days
+     */
+    public function get_log_clearing_interval() {
+        $log_level = $this->get_log_level();
+
+        switch ($log_level) {
+            case self::LEVEL_DEBUG:
+            case self::LEVEL_INFO:
+                return 1; // Clear every day
+            case self::LEVEL_WARNING:
+                return 7; // Clear every 7 days
+            case self::LEVEL_ERROR:
+            case self::LEVEL_CRITICAL:
+                return 30; // Clear every 30 days
+            default:
+                return 7;
+        }
+    }
+
+    /**
+     * Schedule log clearing based on log level
+     */
+    public function schedule_log_clearing() {
+        $hook_name = 'shopcommerce_clear_logs';
+        $interval = $this->get_log_clearing_interval();
+
+        // Clear existing schedule
+        wp_clear_scheduled_hook($hook_name);
+
+        // Schedule new clearing
+        if (!wp_next_scheduled($hook_name)) {
+            wp_schedule_event(time(), "daily", $hook_name);
+        }
     }
 
     /**
@@ -49,6 +121,11 @@ class ShopCommerce_Logger {
      * @param bool $to_file Whether to also log to file
      */
     public function log($level, $message, $context = [], $to_file = true) {
+        // Check if we should log based on the current level
+        if (!$this->should_log($level)) {
+            return;
+        }
+
         $timestamp = current_time('mysql');
         $log_entry = [
             'timestamp' => $timestamp,
@@ -63,7 +140,9 @@ class ShopCommerce_Logger {
             if (!empty($context)) {
                 $log_message .= ' | Context: ' . json_encode($context);
             }
-            error_log($log_message);
+            if($level === self::LEVEL_ERROR || $level === self::LEVEL_CRITICAL) {
+                error_log($log_message);
+            }
         }
 
         // Log to file for persistent storage
@@ -211,11 +290,41 @@ class ShopCommerce_Logger {
     }
 
     /**
+     * Clear old activity log entries based on retention setting
+     */
+    public function clear_old_activity_logs() {
+        $retention_days = intval(get_option('shopcommerce_activity_log_retention', '30'));
+        if ($retention_days <= 0) {
+            return;
+        }
+
+        $activities = get_option(self::ACTIVITY_LOG_KEY, []);
+        $cutoff_date = strtotime("-{$retention_days} days");
+
+        $filtered_activities = array_filter($activities, function($activity) use ($cutoff_date) {
+            return strtotime($activity['timestamp']) >= $cutoff_date;
+        });
+
+        // Re-index array
+        $filtered_activities = array_values($filtered_activities);
+
+        update_option(self::ACTIVITY_LOG_KEY, $filtered_activities, false);
+
+        $this->info("Cleared activity logs older than {$retention_days} days");
+    }
+
+    /**
      * Log to file
      *
      * @param array $log_entry Log entry to write to file
      */
     private function log_to_file($log_entry) {
+        // Check if file logging is enabled
+        $enable_file_logging = get_option('shopcommerce_enable_file_logging', '1');
+        if (!$enable_file_logging) {
+            return;
+        }
+
         $log_file = SHOPCOMMERCE_SYNC_LOGS_DIR . 'shopcommerce-sync.log';
         $log_line = json_encode($log_entry) . PHP_EOL;
 
@@ -265,6 +374,46 @@ class ShopCommerce_Logger {
             file_put_contents($log_file, '');
             $this->info('Log file cleared');
         }
+    }
+
+    /**
+     * Clear logs based on configured interval
+     */
+    public function clear_logs_by_interval() {
+        $interval_days = $this->get_log_clearing_interval();
+        $this->clear_old_logs($interval_days);
+    }
+
+    /**
+     * Clear logs older than specified days
+     *
+     * @param int $days Number of days to keep
+     */
+    public function clear_old_logs($days = 7) {
+        $log_file = SHOPCOMMERCE_SYNC_LOGS_DIR . 'shopcommerce-sync.log';
+
+        if (!file_exists($log_file)) {
+            return;
+        }
+
+        $cutoff_date = strtotime("-{$days} days");
+        $current_lines = file($log_file, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+        $new_lines = [];
+
+        foreach ($current_lines as $line) {
+            $log_entry = json_decode($line, true);
+            if ($log_entry && isset($log_entry['timestamp'])) {
+                $log_date = strtotime($log_entry['timestamp']);
+                if ($log_date >= $cutoff_date) {
+                    $new_lines[] = $line;
+                }
+            }
+        }
+
+        // Write back only the recent logs
+        file_put_contents($log_file, implode(PHP_EOL, $new_lines) . PHP_EOL);
+
+        $this->info("Cleared logs older than {$days} days");
     }
 
     /**

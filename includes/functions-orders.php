@@ -1460,3 +1460,15 @@ function shopcommerce_test_order_processing($order_id) {
 
     return $results;
 }
+
+/**
+ * Scheduled log clearing function
+ * This function is called by the WordPress cron job to clear logs based on the configured interval
+ */
+function shopcommerce_clear_logs_scheduled() {
+    $logger = isset($GLOBALS['shopcommerce_logger']) ? $GLOBALS['shopcommerce_logger'] : null;
+
+    if ($logger) {
+        $logger->clear_logs_by_interval();
+    }
+}
