@@ -15,6 +15,7 @@ This is a WordPress plugin called "ShopCommerce Product Sync Plugin" that synchr
   - `class-shopcommerce-helpers.php` - Utility functions and WooCommerce helpers
   - `class-shopcommerce-product.php` - WooCommerce product creation and updates
   - `class-shopcommerce-cron.php` - WordPress cron job scheduling and management
+  - `class-shopcommerce-cron-debug.php` - Debug utilities for cron system diagnostics
   - `class-shopcommerce-sync.php` - Main sync coordination and business logic
   - `class-shopcommerce-config.php` - Dynamic configuration management with database storage
   - `functions-admin.php` - Admin interface functions and menu setup
@@ -33,7 +34,7 @@ The plugin follows a modular architecture with recent additions:
 - **Order Management**: External provider product detection and order logging
 - **API Layer**: Handles ShopCommerce API communication with OAuth2 authentication
 - **Product Layer**: Manages WooCommerce product operations
-- **Scheduling Layer**: WordPress cron job management
+- **Scheduling Layer**: WordPress cron job management with debug utilities
 - **Logging Layer**: Centralized logging with activity tracking
 - **Admin Layer**: Complete admin interface with dashboard and controls
 
@@ -44,21 +45,25 @@ The plugin follows a modular architecture with recent additions:
 - **Brand Management**: Dedicated interface for managing brand configurations
 - **API Integration**: Automatic brand creation from API responses with duplicate detection
 - **Reset Functionality**: One-click reset to default configuration
+- **Debug Tools**: Comprehensive cron system diagnostics and debugging
 
 ### API Integration
 - **Base URL**: `https://shopcommerce.mps.com.co:7965/`
 - **Authentication**: OAuth2 password grant flow
 - **Token Endpoint**: `/Token`
 - **Catalog Endpoint**: `/api/Webapi/VerCatalogo`
+- **Brands Endpoint**: `/api/Webapi/VerMarcas`
+- **Categories Endpoint**: `/api/Webapi/Ver_Categoria`
 - **Timeout**: 14 minutes (840 seconds) for API requests
 - **Credentials**: Currently hardcoded in `includes/class-shopcommerce-api.php:33-34`
 
 ### Scheduling System
 - Uses WordPress cron jobs with `wp_schedule_event()`
 - Default interval: hourly
-- Custom cron schedule support for every minute
-- Hook name: `provider_product_sync_hook`
+- Custom cron schedule support for every minute, 15 minutes, and 30 minutes
+- Hook name: `shopcommerce_product_sync_hook`
 - Job queue system for processing brands in batches
+- Debug class available for comprehensive cron diagnostics
 
 ### Brand and Category Configuration
 The plugin is configured for selective synchronization:
@@ -82,6 +87,14 @@ Since this is a WordPress plugin without a build system, development involves:
 4. **Debug Interface**: Access via WordPress Admin → ShopCommerce Sync → Dashboard
 5. **Manual Sync**: Use admin interface to trigger sync manually
 
+### Debug Commands
+The plugin includes a debug class for cron diagnostics:
+```php
+// To run cron diagnostics
+$debug = new ShopCommerce_Cron_Debug();
+$debug->run_diagnostics();
+```
+
 ### Code Standards
 - Follow WordPress coding standards
 - Use proper PHP documentation blocks
@@ -102,6 +115,7 @@ Since this is a WordPress plugin without a build system, development involves:
 - **Queue Management**: View and manage sync job queue
 - **Activity Logs**: View detailed sync activity and errors
 - **System Status**: Check API connection and plugin health
+- **Cron Diagnostics**: Comprehensive cron system debugging
 
 ## Configuration Notes
 
@@ -139,6 +153,7 @@ Since this is a WordPress plugin without a build system, development involves:
 - **ShopCommerce_Helpers**: Utility functions for WooCommerce operations
 - **ShopCommerce_Product**: WooCommerce product creation and updates
 - **ShopCommerce_Cron**: Cron job scheduling and management
+- **ShopCommerce_Cron_Debug**: Debug utilities for cron system diagnostics
 - **ShopCommerce_Sync**: Main sync coordination and business logic
 
 ### Additional Functions
@@ -181,6 +196,7 @@ Since this is a WordPress plugin without a build system, development involves:
 2. Enable detailed logging in plugin settings
 3. Check log files in `/logs/` directory
 4. Review WordPress debug log for critical errors
+5. Use ShopCommerce_Cron_Debug class for cron diagnostics
 
 ## Version Information
 
@@ -219,3 +235,35 @@ The plugin creates custom database tables for configuration management:
 - Available as `$GLOBALS['shopcommerce_*']` variables
 - Follows dependency injection pattern for class instantiation
 - Logger is always initialized first to ensure proper logging throughout the system
+
+### AJAX Endpoints
+The plugin provides extensive AJAX functionality through functions-admin.php:
+
+**Core Operations:**
+- Connection testing and manual sync
+- Queue management and job rebuilding
+- Settings updates and cache clearing
+- Activity log retrieval and management
+
+**Brand & Category Management:**
+- CRUD operations for brands and categories
+- API-driven brand and category synchronization
+- Reset functionality for default configuration
+
+**Product Management:**
+- Bulk product operations (trash, delete, publish, draft)
+- Product edit history tracking
+- Product details modal with comprehensive information
+- Duplicate product cleanup utilities
+
+**Order Management:**
+- Order retrieval with ShopCommerce metadata filtering
+- Order details with external provider product detection
+- Metadata updates for existing orders
+- Incomplete orders with external product tracking
+
+### Debug and Diagnostics
+- **ShopCommerce_Cron_Debug**: Comprehensive cron system diagnostics
+- **XML Attributes Testing**: Test parsing and formatting of XML attributes
+- **System Health Monitoring**: API connection testing and plugin status checks
+- **Activity Logging**: Detailed activity tracking with filtering and pagination
