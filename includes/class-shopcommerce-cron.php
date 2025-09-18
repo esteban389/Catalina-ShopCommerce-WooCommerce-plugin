@@ -57,6 +57,15 @@ if (!wp_next_scheduled(SYNC_HOOK_NAME)) {
     wp_schedule_event(time(), "every_15_minutes", SYNC_HOOK_NAME);
 }
 
+        wp_clear_scheduled_hook(BATCH_PROCESS_HOOK_NAME);
+
+            // Schedule batch processing hook (every 5 minutes)
+            if (!wp_next_scheduled(BATCH_PROCESS_HOOK_NAME)) {
+                $batch_scheduled = wp_schedule_event(time(), 'every_5_minutes', BATCH_PROCESS_HOOK_NAME);
+                $this->logger->info('Batch processing cron scheduled', [
+                    'scheduled' => $batch_scheduled
+                ]);
+            }
     }
 
     /**

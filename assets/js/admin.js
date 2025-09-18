@@ -129,6 +129,54 @@
             e.preventDefault();
             resetSettings($(this));
         });
+
+        // Batches page filtering
+        $(document).on('click', '#filter-batches-btn', function(e) {
+            e.preventDefault();
+            filterBatches();
+        });
+
+        // Clear filters
+        $(document).on('click', '#clear-filters-btn', function(e) {
+            e.preventDefault();
+            clearBatchFilters();
+        });
+
+        // Process next batch from batches page
+        $(document).on('click', '#process-next-batch-btn', function(e) {
+            e.preventDefault();
+            processNextBatch($(this));
+        });
+
+        // Reset all failed batches
+        $(document).on('click', '#reset-all-failed-btn', function(e) {
+            e.preventDefault();
+            resetAllFailedBatches($(this));
+        });
+
+        // View batch details
+        $(document).on('click', '.view-details-btn', function(e) {
+            e.preventDefault();
+            viewBatchDetails($(this));
+        });
+
+        // View error details
+        $(document).on('click', '.view-error-btn', function(e) {
+            e.preventDefault();
+            viewErrorDetails($(this));
+        });
+
+        // Pagination
+        $(document).on('click', '#prev-page, #next-page', function(e) {
+            e.preventDefault();
+            navigateBatches($(this));
+        });
+
+        // Close modals
+        $(document).on('click', '.modal-close', function(e) {
+            e.preventDefault();
+            $(this).closest('.shopcommerce-modal').hide();
+        });
     }
 
     /**
@@ -990,6 +1038,225 @@
                 $button.prop('disabled', false).text('Check Completion');
             }
         });
+    }
+
+    /**
+     * Batch Management Functions
+     */
+
+    function filterBatches() {
+        var status = $('#status-filter').val();
+        var brand = $('#brand-filter').val();
+        var search = $('#search-input').val();
+
+        var url = new URL(window.location.href);
+        if (status) url.searchParams.set('status', status);
+        else url.searchParams.delete('status');
+
+        if (brand) url.searchParams.set('brand', brand);
+        else url.searchParams.delete('brand');
+
+        if (search) url.searchParams.set('s', search);
+        else url.searchParams.delete('s');
+
+        // Reset to first page when filtering
+        url.searchParams.delete('paged');
+
+        window.location.href = url.toString();
+    }
+
+    function clearBatchFilters() {
+        $('#status-filter').val('');
+        $('#brand-filter').val('');
+        $('#search-input').val('');
+
+        var url = new URL(window.location.href);
+        url.searchParams.delete('status');
+        url.searchParams.delete('brand');
+        url.searchParams.delete('s');
+        url.searchParams.delete('paged');
+
+        window.location.href = url.toString();
+    }
+
+    function processNextBatch($button) {
+        var originalText = $button.html();
+        $button.prop('disabled', true).html('<span class="dashicons dashicons-update spin"></span> Processing...');
+
+        $.ajax({
+            url: shopcommerce_admin.ajax_url,
+            type: 'POST',
+            data: {
+                action: 'shopcommerce_process_pending_batches',
+                nonce: shopcommerce_admin.nonce,
+                limit: 1
+            },
+            success: function(response) {
+                if (response.success) {
+                    showMessage('Next batch processed successfully', 'success');
+                    setTimeout(function() {
+                        window.location.reload();
+                    }, 1000);
+                } else {
+                    showMessage('Failed to process batch: ' + response.data.message, 'error');
+                }
+            },
+            error: function() {
+                showMessage('Failed to process batch', 'error');
+            },
+            complete: function() {
+                $button.prop('disabled', false).html(originalText);
+            }
+        });
+    }
+
+    function resetAllFailedBatches($button) {
+        if (!confirm('Are you sure you want to reset all failed batches? This will move them back to pending status.')) {
+            return;
+        }
+
+        var originalText = $button.html();
+        $button.prop('disabled', true).html('<span class="dashicons dashicons-update spin"></span> Resetting...');
+
+        $.ajax({
+            url: shopcommerce_admin.ajax_url,
+            type: 'POST',
+            data: {
+                action: 'shopcommerce_reset_failed_batches',
+                nonce: shopcommerce_admin.nonce
+            },
+            success: function(response) {
+                if (response.success) {
+                    showMessage('Reset ' + response.data.reset_count + ' failed batches', 'success');
+                    setTimeout(function() {
+                        window.location.reload();
+                    }, 1000);
+                } else {
+                    showMessage('Failed to reset failed batches: ' + response.data.message, 'error');
+                }
+            },
+            error: function() {
+                showMessage('Failed to reset failed batches', 'error');
+            },
+            complete: function() {
+                $button.prop('disabled', false).html(originalText);
+            }
+        });
+    }
+
+    function viewBatchDetails($button) {
+        var batchId = $button.data('batch-id');
+        if (!batchId) {
+            return;
+        }
+
+        // Show loading state
+        var $modal = $('#batch-details-modal');
+        var $content = $('#batch-details-content');
+        $content.html('<div class="loading"><span class="dashicons dashicons-update spin"></span> Loading batch details...</div>');
+        $modal.show();
+
+        $.ajax({
+            url: shopcommerce_admin.ajax_url,
+            type: 'POST',
+            data: {
+                action: 'shopcommerce_get_batch_details',
+                nonce: shopcommerce_admin.nonce,
+                batch_id: batchId
+            },
+            success: function(response) {
+                if (response.success) {
+                    var batch = response.data.batch;
+                    var batchData = response.data.batch_data || [];
+
+                    var html = '<div class="batch-details">';
+                    html += '<h4>Batch Information</h4>';
+                    html += '<table class="form-table">';
+                    html += '<tr><th>ID:</th><td>' + batch.id + '</td></tr>';
+                    html += '<tr><th>Brand:</th><td>' + batch.brand + '</td></tr>';
+                    html += '<tr><th>Status:</th><td><span class="batch-status status-' + batch.status + '">' + ucfirstWords(batch.status) + '</span></td></tr>';
+                    html += '<tr><th>Batch Index:</th><td>' + batch.batch_index + ' of ' + batch.total_batches + '</td></tr>';
+                    html += '<tr><th>Created:</th><td>' + formatDate(batch.created_at) + '</td></tr>';
+                    if (batch.started_at) {
+                        html += '<tr><th>Started:</th><td>' + formatDate(batch.started_at) + '</td></tr>';
+                    }
+                    if (batch.completed_at) {
+                        html += '<tr><th>Completed:</th><td>' + formatDate(batch.completed_at) + '</td></tr>';
+                    }
+                    html += '<tr><th>Attempts:</th><td>' + batch.attempts + ' / ' + batch.max_attempts + '</td></tr>';
+                    if (batch.error_message) {
+                        html += '<tr><th>Error:</th><td class="error-message">' + escapeHtml(batch.error_message) + '</td></tr>';
+                    }
+                    html += '</table>';
+
+                    if (batchData.length > 0) {
+                        html += '<h4>Products in Batch (' + batchData.length + ')</h4>';
+                        html += '<div class="batch-products">';
+                        html += '<ul class="product-list">';
+                        for (var i = 0; i < Math.min(batchData.length, 10); i++) {
+                            var product = batchData[i];
+                            html += '<li>';
+                            html += '<strong>' + escapeHtml(product.nombre || product.name || 'Unknown') + '</strong>';
+                            if (product.sku) {
+                                html += ' (SKU: ' + escapeHtml(product.sku) + ')';
+                            }
+                            if (product.precio) {
+                                html += ' - $' + parseFloat(product.precio).toFixed(2);
+                            }
+                            html += '</li>';
+                        }
+                        if (batchData.length > 10) {
+                            html += '<li class="more-items">... and ' + (batchData.length - 10) + ' more products</li>';
+                        }
+                        html += '</ul>';
+                        html += '</div>';
+                    }
+
+                    html += '</div>';
+                    $content.html(html);
+                } else {
+                    $content.html('<div class="error">Failed to load batch details: ' + response.data.message + '</div>');
+                }
+            },
+            error: function() {
+                $content.html('<div class="error">Failed to load batch details</div>');
+            }
+        });
+    }
+
+    function viewErrorDetails($button) {
+        var errorMessage = $button.data('error');
+        if (!errorMessage) {
+            return;
+        }
+
+        var $modal = $('#error-details-modal');
+        var $content = $('#error-details-content');
+
+        $content.html('<div class="error-details-content">');
+        $content.append('<h4>Error Details</h4>');
+        $content.append('<div class="error-message">' + escapeHtml(errorMessage) + '</div>');
+        $content.append('</div>');
+
+        $modal.show();
+    }
+
+    function navigateBatches($button) {
+        var currentPage = parseInt($('#current-page').val()) || 1;
+        var totalPages = parseInt($('.total-pages').text()) || 1;
+        var newPage = currentPage;
+
+        if ($button.attr('id') === 'prev-page' && currentPage > 1) {
+            newPage = currentPage - 1;
+        } else if ($button.attr('id') === 'next-page' && currentPage < totalPages) {
+            newPage = currentPage + 1;
+        }
+
+        if (newPage !== currentPage) {
+            var url = new URL(window.location.href);
+            url.searchParams.set('paged', newPage);
+            window.location.href = url.toString();
+        }
     }
 
     /**

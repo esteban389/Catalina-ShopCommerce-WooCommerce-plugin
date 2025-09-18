@@ -600,4 +600,127 @@
 .products-processed::before {
     content: "🛒";
 }
+
+/* Batch Details Modal */
+.batch-details {
+    padding: 20px 0;
+}
+
+.batch-details h4 {
+    margin: 0 0 15px 0;
+    padding-bottom: 10px;
+    border-bottom: 1px solid #eee;
+    color: #23282d;
+}
+
+.batch-details .form-table {
+    margin: 0;
+}
+
+.batch-details .form-table th {
+    width: 150px;
+    font-weight: 600;
+    color: #50575e;
+}
+
+.batch-status.status-pending {
+    color: #ffb900;
+    font-weight: 600;
+}
+
+.batch-status.status-processing {
+    color: #0073aa;
+    font-weight: 600;
+}
+
+.batch-status.status-completed {
+    color: #46b450;
+    font-weight: 600;
+}
+
+.batch-status.status-failed {
+    color: #dc3232;
+    font-weight: 600;
+}
+
+.batch-products {
+    margin-top: 20px;
+}
+
+.product-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    max-height: 300px;
+    overflow-y: auto;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    background: #f9f9f9;
+}
+
+.product-list li {
+    padding: 10px 15px;
+    border-bottom: 1px solid #eee;
+    font-size: 13px;
+}
+
+.product-list li:last-child {
+    border-bottom: none;
+}
+
+.product-list li.more-items {
+    background: #f0f0f1;
+    font-style: italic;
+    color: #666;
+    text-align: center;
+    padding: 8px 15px;
+}
+
+.error-message {
+    color: #dc3232;
+    background: #fff;
+    border: 1px solid #dc3232;
+    border-radius: 4px;
+    padding: 10px;
+    margin: 5px 0;
+    font-family: monospace;
+    font-size: 12px;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+.error-details-content {
+    padding: 20px;
+}
+
+.error-details-content h4 {
+    margin: 0 0 15px 0;
+    color: #dc3232;
+}
+
+.error-details-content .error-message {
+    background: #fafafa;
+    border-color: #ddd;
+    color: #444;
+}
+
+/* Loading spinner */
+.loading {
+    text-align: center;
+    padding: 40px;
+    color: #666;
+}
+
+.loading .dashicons.update {
+    font-size: 24px;
+    animation: spin 2s linear infinite;
+    display: inline-block;
+    vertical-align: middle;
+    margin-right: 10px;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
 }

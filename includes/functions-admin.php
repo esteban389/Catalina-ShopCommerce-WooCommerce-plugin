@@ -63,6 +63,15 @@ function shopcommerce_admin_menu() {
         'shopcommerce_sync_control_page'
     );
 
+    add_submenu_page(
+        'shopcommerce-sync',
+        'Batches',
+        'Batches',
+        'manage_options',
+        'shopcommerce-sync-batches',
+        'shopcommerce_batches_page'
+    );
+
 /*     add_submenu_page(
         'shopcommerce-sync',
         'Logs',
@@ -176,6 +185,96 @@ function shopcommerce_management_page() {
 }
 
 /**
+ * Handle batch actions (execute, retry, delete, etc.)
+ *
+ * @param string $action Action to perform
+ * @param int $batch_id Batch ID
+ */
+function handle_batch_action($action, $batch_id) {
+    if (!current_user_can('manage_options') || !wp_verify_nonce($_REQUEST['_wpnonce'], 'batch_action_' . $batch_id)) {
+        wp_die(__('Security check failed.'));
+    }
+
+    try {
+        global $shopcommerce_batch_processor, $shopcommerce_jobs_store;
+
+        switch ($action) {
+            case 'execute':
+                if ($shopcommerce_batch_processor) {
+                    $result = $shopcommerce_batch_processor->process_batch($batch_id);
+                    if ($result['success']) {
+                        wp_redirect(add_query_arg([
+                            'page' => 'shopcommerce-sync-batches',
+                            'message' => 'Batch executed successfully',
+                            'type' => 'success'
+                        ], admin_url('admin.php')));
+                    } else {
+                        wp_redirect(add_query_arg([
+                            'page' => 'shopcommerce-sync-batches',
+                            'message' => 'Batch execution failed: ' . $result['error'],
+                            'type' => 'error'
+                        ], admin_url('admin.php')));
+                    }
+                }
+                break;
+
+            case 'retry':
+                if ($shopcommerce_jobs_store) {
+                    $success = $shopcommerce_jobs_store->update_batch_status($batch_id, 'pending');
+                    if ($success) {
+                        wp_redirect(add_query_arg([
+                            'page' => 'shopcommerce-sync-batches',
+                            'message' => 'Batch reset for retry',
+                            'type' => 'success'
+                        ], admin_url('admin.php')));
+                    } else {
+                        wp_redirect(add_query_arg([
+                            'page' => 'shopcommerce-sync-batches',
+                            'message' => 'Failed to reset batch',
+                            'type' => 'error'
+                        ], admin_url('admin.php')));
+                    }
+                }
+                break;
+
+            case 'delete':
+                if ($shopcommerce_jobs_store) {
+                    $success = $shopcommerce_jobs_store->delete_batch($batch_id);
+                    if ($success) {
+                        wp_redirect(add_query_arg([
+                            'page' => 'shopcommerce-sync-batches',
+                            'message' => 'Batch deleted successfully',
+                            'type' => 'success'
+                        ], admin_url('admin.php')));
+                    } else {
+                        wp_redirect(add_query_arg([
+                            'page' => 'shopcommerce-sync-batches',
+                            'message' => 'Failed to delete batch',
+                            'type' => 'error'
+                        ], admin_url('admin.php')));
+                    }
+                }
+                break;
+
+            default:
+                wp_redirect(add_query_arg([
+                    'page' => 'shopcommerce-sync-batches',
+                    'message' => 'Invalid action',
+                    'type' => 'error'
+                ], admin_url('admin.php')));
+                break;
+        }
+    } catch (Exception $e) {
+        wp_redirect(add_query_arg([
+            'page' => 'shopcommerce-sync-batches',
+            'message' => 'Error: ' . $e->getMessage(),
+            'type' => 'error'
+        ], admin_url('admin.php')));
+    }
+    exit;
+}
+
+/**
  * Sync control page
  */
 function shopcommerce_sync_control_page() {
@@ -189,6 +288,30 @@ function shopcommerce_sync_control_page() {
     $api_client = isset($GLOBALS['shopcommerce_api']) ? $GLOBALS['shopcommerce_api'] : null;
 
     include SHOPCOMMERCE_SYNC_PLUGIN_DIR . 'admin/templates/sync-control.php';
+}
+
+/**
+ * Batches management page
+ */
+function shopcommerce_batches_page() {
+    if (!current_user_can('manage_options')) {
+        wp_die(__('You do not have sufficient permissions to access this page.'));
+    }
+
+    // Get handlers
+    $jobs_store = isset($GLOBALS['shopcommerce_jobs_store']) ? $GLOBALS['shopcommerce_jobs_store'] : null;
+    $batch_processor = isset($GLOBALS['shopcommerce_batch_processor']) ? $GLOBALS['shopcommerce_batch_processor'] : null;
+    $sync_handler = isset($GLOBALS['shopcommerce_sync']) ? $GLOBALS['shopcommerce_sync'] : null;
+
+    // Handle batch actions
+    $action = isset($_REQUEST['action']) ? $_REQUEST['action'] : '';
+    $batch_id = isset($_REQUEST['batch_id']) ? intval($_REQUEST['batch_id']) : 0;
+
+    if ($action && $batch_id) {
+        handle_batch_action($action, $batch_id);
+    }
+
+    include SHOPCOMMERCE_SYNC_PLUGIN_DIR . 'admin/templates/batches.php';
 }
 
 /**
@@ -329,6 +452,7 @@ function shopcommerce_register_ajax_handlers() {
     add_action('wp_ajax_shopcommerce_get_batch_queue_stats', 'shopcommerce_ajax_get_batch_queue_stats');
     add_action('wp_ajax_shopcommerce_reset_failed_batches', 'shopcommerce_ajax_reset_failed_batches');
     add_action('wp_ajax_shopcommerce_cleanup_old_batches', 'shopcommerce_ajax_cleanup_old_batches');
+    add_action('wp_ajax_shopcommerce_get_batch_details', 'shopcommerce_ajax_get_batch_details');
 }
 add_action('admin_init', 'shopcommerce_register_ajax_handlers');
 
@@ -2721,3 +2845,49 @@ function shopcommerce_ajax_check_brand_completion() {
     }
 }
 add_action('wp_ajax_shopcommerce_check_brand_completion', 'shopcommerce_ajax_check_brand_completion');
+
+/**
+ * AJAX handler for getting batch details
+ */
+function shopcommerce_ajax_get_batch_details() {
+    // Verify nonce
+    check_ajax_referer('shopcommerce_admin_nonce', 'nonce');
+
+    // Check permissions
+    if (!current_user_can('manage_options')) {
+        wp_send_json_error(['message' => 'Insufficient permissions']);
+    }
+
+    $batch_id = isset($_POST['batch_id']) ? intval($_POST['batch_id']) : 0;
+    if (!$batch_id) {
+        wp_send_json_error(['message' => 'Invalid batch ID']);
+    }
+
+    // Get instances
+    $jobs_store = isset($GLOBALS['shopcommerce_jobs_store']) ? $GLOBALS['shopcommerce_jobs_store'] : null;
+    if (!$jobs_store) {
+        wp_send_json_error(['message' => 'Jobs store not available']);
+    }
+
+    try {
+        $batch = $jobs_store->get_batch_by_id($batch_id);
+        if (!$batch) {
+            wp_send_json_error(['message' => 'Batch not found']);
+        }
+
+        $batch_data = json_decode($batch->batch_data, true);
+        if (!is_array($batch_data)) {
+            $batch_data = [];
+        }
+
+        wp_send_json_success([
+            'batch' => $batch,
+            'batch_data' => $batch_data
+        ]);
+
+    } catch (Exception $e) {
+        wp_send_json_error([
+            'message' => 'Failed to get batch details: ' . $e->getMessage()
+        ]);
+    }
+}

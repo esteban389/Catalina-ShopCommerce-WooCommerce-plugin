@@ -1208,6 +1208,164 @@ class ShopCommerce_Jobs_Store {
     }
 
     /**
+     * Delete a batch from the queue
+     *
+     * @param int $batch_id Batch ID to delete
+     * @return bool True if successful
+     */
+    public function delete_batch($batch_id) {
+        global $wpdb;
+
+        $result = $wpdb->delete(
+            $this->batch_queue_table,
+            ['id' => $batch_id],
+            ['%d']
+        );
+
+        if ($result) {
+            $this->logger->info('Batch deleted successfully', ['batch_id' => $batch_id]);
+            return true;
+        }
+
+        $this->logger->error('Failed to delete batch', ['batch_id' => $batch_id]);
+        return false;
+    }
+
+    /**
+     * Get batches with filtering and pagination
+     *
+     * @param int $per_page Number of batches per page
+     * @param int $offset Offset for pagination
+     * @param string $status Filter by status
+     * @param string $brand Filter by brand
+     * @param string $search Search in batch data
+     * @return array Array of batch objects
+     */
+    public function get_batches($per_page = 20, $offset = 0, $status = '', $brand = '', $search = '') {
+        global $wpdb;
+
+        $where_clauses = ['1=1'];
+        $prepare_values = [];
+
+        if ($status) {
+            $where_clauses[] = 'status = %s';
+            $prepare_values[] = $status;
+        }
+
+        if ($brand) {
+            $where_clauses[] = 'brand = %s';
+            $prepare_values[] = $brand;
+        }
+
+        if ($search) {
+            $where_clauses[] = '(brand LIKE %s OR error_message LIKE %s)';
+            $prepare_values[] = '%' . $wpdb->esc_like($search) . '%';
+            $prepare_values[] = '%' . $wpdb->esc_like($search) . '%';
+        }
+
+        $where_clause = implode(' AND ', $where_clauses);
+
+        $sql = $wpdb->prepare(
+            "SELECT * FROM {$this->batch_queue_table}
+             WHERE {$where_clause}
+             ORDER BY created_at DESC, priority DESC
+             LIMIT %d OFFSET %d",
+            array_merge($prepare_values, [$per_page, $offset])
+        );
+
+        $results = $wpdb->get_results($sql);
+
+        if ($wpdb->last_error) {
+            $this->logger->error('Failed to get batches', [
+                'error' => $wpdb->last_error,
+                'where_clause' => $where_clause,
+                'per_page' => $per_page,
+                'offset' => $offset
+            ]);
+            return [];
+        }
+
+        return $results;
+    }
+
+    /**
+     * Get total count of batches with filtering
+     *
+     * @param string $status Filter by status
+     * @param string $brand Filter by brand
+     * @param string $search Search in batch data
+     * @return int Total count
+     */
+    public function get_batches_count($status = '', $brand = '', $search = '') {
+        global $wpdb;
+
+        $where_clauses = ['1=1'];
+        $prepare_values = [];
+
+        if ($status) {
+            $where_clauses[] = 'status = %s';
+            $prepare_values[] = $status;
+        }
+
+        if ($brand) {
+            $where_clauses[] = 'brand = %s';
+            $prepare_values[] = $brand;
+        }
+
+        if ($search) {
+            $where_clauses[] = '(brand LIKE %s OR error_message LIKE %s)';
+            $prepare_values[] = '%' . $wpdb->esc_like($search) . '%';
+            $prepare_values[] = '%' . $wpdb->esc_like($search) . '%';
+        }
+
+        $where_clause = implode(' AND ', $where_clauses);
+
+        $sql = $wpdb->prepare(
+            "SELECT COUNT(*) FROM {$this->batch_queue_table} WHERE {$where_clause}",
+            $prepare_values
+        );
+
+        $count = $wpdb->get_var($sql);
+
+        if ($wpdb->last_error) {
+            $this->logger->error('Failed to get batches count', [
+                'error' => $wpdb->last_error,
+                'where_clause' => $where_clause
+            ]);
+            return 0;
+        }
+
+        return intval($count);
+    }
+
+    /**
+     * Get a single batch by ID
+     *
+     * @param int $batch_id Batch ID
+     * @return object|null Batch object or null if not found
+     */
+    public function get_batch_by_id($batch_id) {
+        global $wpdb;
+
+        $sql = $wpdb->prepare(
+            "SELECT * FROM {$this->batch_queue_table} WHERE id = %d",
+            $batch_id
+        );
+
+        $batch = $wpdb->get_row($sql);
+
+        if ($wpdb->last_error) {
+            $this->logger->error('Failed to get batch by ID', [
+                'batch_id' => $batch_id,
+                'error' => $wpdb->last_error
+            ]);
+            return null;
+        }
+
+        return $batch;
+    }
+
+    /**
      * Build sync configuration (replaces hardcoded config)
      *
      * @return array Sync configuration
