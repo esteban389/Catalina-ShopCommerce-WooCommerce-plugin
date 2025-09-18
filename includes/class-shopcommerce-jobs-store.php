@@ -22,6 +22,7 @@ class ShopCommerce_Jobs_Store {
     private $brands_table;
     private $categories_table;
     private $brand_categories_table;
+    private $batch_queue_table;
 
     /**
      * Cache for jobs list
@@ -42,6 +43,7 @@ class ShopCommerce_Jobs_Store {
         $this->brands_table = $wpdb->prefix . 'shopcommerce_brands';
         $this->categories_table = $wpdb->prefix . 'shopcommerce_categories';
         $this->brand_categories_table = $wpdb->prefix . 'shopcommerce_brand_categories';
+        $this->batch_queue_table = $wpdb->prefix . 'shopcommerce_batch_queue';
 
         // Create tables if they don't exist
         $this->create_tables();
@@ -93,11 +95,34 @@ class ShopCommerce_Jobs_Store {
             KEY category_id (category_id)
         ) $charset_collate;";
 
+        // Batch queue table for async processing
+        $batch_queue_sql = "CREATE TABLE IF NOT EXISTS {$this->batch_queue_table} (
+            id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+            brand varchar(100) NOT NULL,
+            categories text NOT NULL,
+            batch_data longtext NOT NULL,
+            batch_index int(11) NOT NULL,
+            total_batches int(11) NOT NULL,
+            status enum('pending','processing','completed','failed') DEFAULT 'pending',
+            created_at datetime DEFAULT CURRENT_TIMESTAMP,
+            started_at datetime DEFAULT NULL,
+            completed_at datetime DEFAULT NULL,
+            error_message text,
+            attempts int(11) DEFAULT 0,
+            max_attempts int(11) DEFAULT 3,
+            priority int(11) DEFAULT 0,
+            PRIMARY KEY  (id),
+            KEY brand_status (brand, status),
+            KEY status_created (status, created_at),
+            KEY priority_status (priority, status)
+        ) $charset_collate;";
+
         require_once(ABSPATH . 'wp-admin/includes/upgrade.php');
 
         dbDelta($brands_sql);
         dbDelta($categories_sql);
         dbDelta($brand_categories_sql);
+        dbDelta($batch_queue_sql);
 
         // Initialize with default data if tables are empty
         $this->initialize_default_data_if_tables_empty();
@@ -887,6 +912,299 @@ class ShopCommerce_Jobs_Store {
         }
 
         $this->logger->info('Initialized default brand-category relationships');
+    }
+
+    /**
+     * Batch Queue Management Methods
+     */
+
+    /**
+     * Add a batch to the processing queue
+     *
+     * @param string $brand Brand name
+     * @param array $categories Category codes
+     * @param array $batch_data Batch product data
+     * @param int $batch_index Batch index
+     * @param int $total_batches Total number of batches
+     * @param int $priority Priority level (higher = higher priority)
+     * @return int|false Batch ID or false on failure
+     */
+    public function add_batch_to_queue($brand, $categories, $batch_data, $batch_index, $total_batches, $priority = 0) {
+        global $wpdb;
+
+        $result = $wpdb->insert(
+            $this->batch_queue_table,
+            [
+                'brand' => $brand,
+                'categories' => json_encode($categories),
+                'batch_data' => json_encode($batch_data),
+                'batch_index' => $batch_index,
+                'total_batches' => $total_batches,
+                'status' => 'pending',
+                'priority' => $priority,
+            ],
+            ['%s', '%s', '%s', '%d', '%d', '%s', '%d']
+        );
+
+        if ($result) {
+            $batch_id = $wpdb->insert_id;
+            $this->logger->info('Added batch to queue', [
+                'batch_id' => $batch_id,
+                'brand' => $brand,
+                'batch_index' => $batch_index,
+                'total_batches' => $total_batches,
+                'products_count' => count($batch_data)
+            ]);
+            return $batch_id;
+        }
+
+        $this->logger->error('Failed to add batch to queue', [
+            'brand' => $brand,
+            'batch_index' => $batch_index
+        ]);
+        return false;
+    }
+
+    /**
+     * Get next pending batch from queue
+     *
+     * @param int $limit Maximum number of batches to retrieve
+     * @return array List of pending batches
+     */
+    public function get_pending_batches($limit = 1) {
+        global $wpdb;
+
+        return $wpdb->get_results($wpdb->prepare(
+            "SELECT * FROM {$this->batch_queue_table}
+             WHERE status = 'pending'
+             ORDER BY priority DESC, created_at ASC
+             LIMIT %d",
+            $limit
+        ));
+    }
+
+    /**
+     * Get batch by ID
+     *
+     * @param int $batch_id Batch ID
+     * @return object|null Batch object or null if not found
+     */
+    public function get_batch($batch_id) {
+        global $wpdb;
+
+        return $wpdb->get_row($wpdb->prepare(
+            "SELECT * FROM {$this->batch_queue_table} WHERE id = %d",
+            $batch_id
+        ));
+    }
+
+    /**
+     * Update batch status
+     *
+     * @param int $batch_id Batch ID
+     * @param string $status New status
+     * @param string $error_message Error message (if any)
+     * @return bool Success status
+     */
+    public function update_batch_status($batch_id, $status, $error_message = null) {
+        global $wpdb;
+
+        $data = [
+            'status' => $status,
+        ];
+
+        if ($status === 'processing') {
+            $data['started_at'] = current_time('mysql');
+            $data['attempts'] = ['expression' => 'attempts + 1'];
+        } elseif ($status === 'completed' || $status === 'failed') {
+            $data['completed_at'] = current_time('mysql');
+        }
+
+        if ($error_message) {
+            $data['error_message'] = $error_message;
+        }
+
+        $format = ['%s'];
+
+        if (isset($data['started_at'])) {
+            $format[] = '%s';
+        }
+        if (isset($data['completed_at'])) {
+            $format[] = '%s';
+        }
+        if (isset($data['error_message'])) {
+            $format[] = '%s';
+        }
+
+        // Handle attempts increment separately
+        if (isset($data['attempts']['expression'])) {
+            unset($data['attempts']);
+            $result = $wpdb->query($wpdb->prepare(
+                "UPDATE {$this->batch_queue_table}
+                 SET status = %s,
+                     started_at = COALESCE(started_at, %s),
+                     completed_at = " . ($status === 'completed' || $status === 'failed' ? "%s" : "completed_at") . ",
+                     error_message = " . ($error_message ? "%s" : "error_message") . ",
+                     attempts = attempts + 1
+                 WHERE id = %d",
+                array_merge([$status, current_time('mysql')],
+                    ($status === 'completed' || $status === 'failed' ? [current_time('mysql')] : []),
+                    $error_message ? [$error_message] : [],
+                    [$batch_id])
+            ));
+        } else {
+            $result = $wpdb->update(
+                $this->batch_queue_table,
+                $data,
+                ['id' => $batch_id],
+                $format,
+                ['%d']
+            );
+        }
+
+        if ($result) {
+            $this->logger->info('Updated batch status', [
+                'batch_id' => $batch_id,
+                'status' => $status,
+                'error_message' => $error_message
+            ]);
+            return true;
+        }
+
+        $this->logger->error('Failed to update batch status', [
+            'batch_id' => $batch_id,
+            'status' => $status
+        ]);
+        return false;
+    }
+
+    /**
+     * Increment batch attempt count
+     *
+     * @param int $batch_id Batch ID
+     * @return bool True if successful
+     */
+    public function increment_batch_attempts($batch_id) {
+        global $wpdb;
+
+        $result = $wpdb->query($wpdb->prepare(
+            "UPDATE {$this->batch_queue_table}
+             SET attempts = attempts + 1
+             WHERE id = %d",
+            $batch_id
+        ));
+
+        if ($result) {
+            $this->logger->debug('Incremented batch attempts', ['batch_id' => $batch_id]);
+            return true;
+        }
+
+        $this->logger->error('Failed to increment batch attempts', ['batch_id' => $batch_id]);
+        return false;
+    }
+
+    /**
+     * Get queue statistics
+     *
+     * @return array Queue statistics
+     */
+    public function get_queue_stats() {
+        global $wpdb;
+
+        $stats = $wpdb->get_results(
+            "SELECT status, COUNT(*) as count
+             FROM {$this->batch_queue_table}
+             GROUP BY status"
+        );
+
+        $result = [
+            'pending' => 0,
+            'processing' => 0,
+            'completed' => 0,
+            'failed' => 0,
+        ];
+
+        foreach ($stats as $stat) {
+            if (isset($result[$stat->status])) {
+                $result[$stat->status] = intval($stat->count);
+            }
+        }
+
+        // Get oldest pending batch time
+        $oldest_pending = $wpdb->get_var(
+            "SELECT created_at FROM {$this->batch_queue_table}
+             WHERE status = 'pending'
+             ORDER BY created_at ASC
+             LIMIT 1"
+        );
+
+        $result['oldest_pending'] = $oldest_pending;
+        $result['total_batches'] = array_sum($result);
+
+        return $result;
+    }
+
+    /**
+     * Clean up old completed batches
+     *
+     * @param int $days_old Delete batches older than this many days
+     * @return int Number of batches deleted
+     */
+    public function cleanup_old_batches($days_old = 7) {
+        global $wpdb;
+
+        $result = $wpdb->query($wpdb->prepare(
+            "DELETE FROM {$this->batch_queue_table}
+             WHERE status IN ('completed', 'failed')
+             AND completed_at < DATE_SUB(NOW(), INTERVAL %d DAY)",
+            $days_old
+        ));
+
+        if ($result) {
+            $this->logger->info('Cleaned up old batches', [
+                'days_old' => $days_old,
+                'deleted_count' => $result
+            ]);
+        }
+
+        return $result;
+    }
+
+    /**
+     * Reset failed batches for retry
+     *
+     * @param string|null $brand Specific brand to reset (null for all)
+     * @return int Number of batches reset
+     */
+    public function reset_failed_batches($brand = null) {
+        global $wpdb;
+
+        $where = ["status = 'failed'", "attempts < max_attempts"];
+        $prepare_values = [];
+
+        if ($brand) {
+            $where[] = "brand = %s";
+            $prepare_values[] = $brand;
+        }
+
+        $result = $wpdb->query($wpdb->prepare(
+            "UPDATE {$this->batch_queue_table}
+             SET status = 'pending',
+                 started_at = NULL,
+                 completed_at = NULL,
+                 error_message = NULL
+             WHERE " . implode(' AND ', $where),
+            $prepare_values
+        ));
+
+        if ($result) {
+            $this->logger->info('Reset failed batches for retry', [
+                'brand' => $brand,
+                'reset_count' => $result
+            ]);
+        }
+
+        return $result;
     }
 
     /**

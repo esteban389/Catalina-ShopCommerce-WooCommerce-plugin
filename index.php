@@ -25,6 +25,7 @@ define('SHOPCOMMERCE_SYNC_ASSETS_DIR', SHOPCOMMERCE_SYNC_PLUGIN_URL . 'assets/')
 define('SHOPCOMMERCE_SYNC_ASSETS_DATA_DIR', SHOPCOMMERCE_SYNC_PLUGIN_DIR . 'data/');
 define('SHOPCOMMERCE_SYNC_LOGS_DIR', SHOPCOMMERCE_SYNC_PLUGIN_DIR . 'logs/');
 define('SYNC_HOOK_NAME', 'shopcommerce_product_sync_hook');
+define('BATCH_PROCESS_HOOK_NAME', 'shopcommerce_batch_process_hook');
 
 // Include the main classes
 require_once SHOPCOMMERCE_SYNC_INCLUDES_DIR . 'class-shopcommerce-logger.php';
@@ -36,6 +37,7 @@ require_once SHOPCOMMERCE_SYNC_INCLUDES_DIR . 'class-shopcommerce-cron-debug.php
 require_once SHOPCOMMERCE_SYNC_INCLUDES_DIR . 'class-shopcommerce-sync.php';
 require_once SHOPCOMMERCE_SYNC_INCLUDES_DIR . 'class-shopcommerce-config.php';
 require_once SHOPCOMMERCE_SYNC_INCLUDES_DIR . 'class-shopcommerce-jobs-store.php';
+require_once SHOPCOMMERCE_SYNC_INCLUDES_DIR . 'class-shopcommerce-batch-processor.php';
 
 // Include admin functions
 require_once SHOPCOMMERCE_SYNC_INCLUDES_DIR . 'functions-admin.php';
@@ -70,6 +72,9 @@ function shopcommerce_sync_init()
     // Initialize main sync logic
     $sync_handler = new ShopCommerce_Sync($logger, $api_client, $product_handler, $cron_scheduler, $jobs_store);
 
+    // Initialize batch processor
+    $batch_processor = new ShopCommerce_Batch_Processor($logger, $jobs_store, $product_handler);
+
     // Make instances available globally if needed
     $GLOBALS['shopcommerce_logger'] = $logger;
     $GLOBALS['shopcommerce_jobs_store'] = $jobs_store;
@@ -79,6 +84,7 @@ function shopcommerce_sync_init()
     $GLOBALS['shopcommerce_product'] = $product_handler;
     $GLOBALS['shopcommerce_cron'] = $cron_scheduler;
     $GLOBALS['shopcommerce_sync'] = $sync_handler;
+    $GLOBALS['shopcommerce_batch_processor'] = $batch_processor;
 }
 
 // Initialize plugin on WordPress 'init' hook
@@ -110,6 +116,17 @@ function shopcommerce_sync_products()
     if (class_exists('ShopCommerce_Sync')) {
         $sync_handler = $GLOBALS['shopcommerce_sync'];
         $sync_handler->execute_sync();
+    }
+}
+
+// Hook for automatic batch processing
+add_action(BATCH_PROCESS_HOOK_NAME, 'shopcommerce_process_pending_batches');
+
+function shopcommerce_process_pending_batches()
+{
+    if (class_exists('ShopCommerce_Cron')) {
+        $cron_scheduler = $GLOBALS['shopcommerce_cron'];
+        $cron_scheduler->process_pending_batches();
     }
 }
 

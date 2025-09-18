@@ -322,6 +322,13 @@ function shopcommerce_register_ajax_handlers() {
     add_action('wp_ajax_shopcommerce_fetch_api_brands', 'shopcommerce_ajax_fetch_api_brands');
     // Categories management from API
     add_action('wp_ajax_shopcommerce_sync_categories', 'shopcommerce_ajax_sync_categories');
+
+    // Batch processing
+    add_action('wp_ajax_shopcommerce_process_batch', 'shopcommerce_ajax_process_batch');
+    add_action('wp_ajax_shopcommerce_get_batch_progress', 'shopcommerce_ajax_get_batch_progress');
+    add_action('wp_ajax_shopcommerce_get_batch_queue_stats', 'shopcommerce_ajax_get_batch_queue_stats');
+    add_action('wp_ajax_shopcommerce_reset_failed_batches', 'shopcommerce_ajax_reset_failed_batches');
+    add_action('wp_ajax_shopcommerce_cleanup_old_batches', 'shopcommerce_ajax_cleanup_old_batches');
 }
 add_action('admin_init', 'shopcommerce_register_ajax_handlers');
 
@@ -2456,3 +2463,261 @@ function shopcommerce_ajax_sync_categories() {
         ]);
     }
 }
+
+/**
+ * Batch Processing AJAX Handlers
+ */
+
+/**
+ * AJAX handler for processing a single batch
+ */
+function shopcommerce_ajax_process_batch() {
+    // Verify nonce
+    check_ajax_referer('shopcommerce_admin_nonce', 'nonce');
+
+    // Check permissions
+    if (!current_user_can('manage_options')) {
+        wp_send_json_error(['message' => 'Insufficient permissions']);
+    }
+
+    $batch_id = isset($_POST['batch_id']) ? intval($_POST['batch_id']) : 0;
+
+    if (!$batch_id) {
+        wp_send_json_error(['message' => 'Missing batch ID']);
+    }
+
+    // Get instances
+    $batch_processor = isset($GLOBALS['shopcommerce_batch_processor']) ? $GLOBALS['shopcommerce_batch_processor'] : null;
+    $logger = isset($GLOBALS['shopcommerce_logger']) ? $GLOBALS['shopcommerce_logger'] : null;
+
+    if (!$batch_processor) {
+        wp_send_json_error(['message' => 'Batch processor not available']);
+    }
+
+    if ($logger) {
+        $logger->info('AJAX batch processing request', ['batch_id' => $batch_id]);
+    }
+
+    try {
+        $result = $batch_processor->process_batch($batch_id);
+        wp_send_json_success($result);
+    } catch (Exception $e) {
+        if ($logger) {
+            $logger->error('AJAX batch processing failed', [
+                'batch_id' => $batch_id,
+                'error' => $e->getMessage()
+            ]);
+        }
+        wp_send_json_error([
+            'message' => 'Batch processing failed: ' . $e->getMessage()
+        ]);
+    }
+}
+
+/**
+ * AJAX handler for getting batch progress
+ */
+function shopcommerce_ajax_get_batch_progress() {
+    // Verify nonce
+    check_ajax_referer('shopcommerce_admin_nonce', 'nonce');
+
+    // Check permissions
+    if (!current_user_can('manage_options')) {
+        wp_send_json_error(['message' => 'Insufficient permissions']);
+    }
+
+    $brand = isset($_POST['brand']) ? sanitize_text_field($_POST['brand']) : '';
+
+    if (!$brand) {
+        wp_send_json_error(['message' => 'Missing brand parameter']);
+    }
+
+    // Get instances
+    $batch_processor = isset($GLOBALS['shopcommerce_batch_processor']) ? $GLOBALS['shopcommerce_batch_processor'] : null;
+
+    if (!$batch_processor) {
+        wp_send_json_error(['message' => 'Batch processor not available']);
+    }
+
+    try {
+        $progress = $batch_processor->get_brand_progress($brand);
+        if ($progress) {
+            wp_send_json_success($progress);
+        } else {
+            wp_send_json_success(['message' => 'No progress data available for brand: ' . $brand]);
+        }
+    } catch (Exception $e) {
+        wp_send_json_error([
+            'message' => 'Failed to get progress: ' . $e->getMessage()
+        ]);
+    }
+}
+
+/**
+ * AJAX handler for getting batch queue statistics
+ */
+function shopcommerce_ajax_get_batch_queue_stats() {
+    // Verify nonce
+    check_ajax_referer('shopcommerce_admin_nonce', 'nonce');
+
+    // Check permissions
+    if (!current_user_can('manage_options')) {
+        wp_send_json_error(['message' => 'Insufficient permissions']);
+    }
+
+    // Get instances
+    $batch_processor = isset($GLOBALS['shopcommerce_batch_processor']) ? $GLOBALS['shopcommerce_batch_processor'] : null;
+    $jobs_store = isset($GLOBALS['shopcommerce_jobs_store']) ? $GLOBALS['shopcommerce_jobs_store'] : null;
+
+    if (!$batch_processor || !$jobs_store) {
+        wp_send_json_error(['message' => 'Required services not available']);
+    }
+
+    try {
+        $queue_stats = $jobs_store->get_queue_stats();
+        $processing_stats = $batch_processor->get_processing_stats();
+
+        wp_send_json_success([
+            'queue_stats' => $queue_stats,
+            'processing_stats' => $processing_stats
+        ]);
+    } catch (Exception $e) {
+        wp_send_json_error([
+            'message' => 'Failed to get queue stats: ' . $e->getMessage()
+        ]);
+    }
+}
+
+/**
+ * AJAX handler for resetting failed batches
+ */
+function shopcommerce_ajax_reset_failed_batches() {
+    // Verify nonce
+    check_ajax_referer('shopcommerce_admin_nonce', 'nonce');
+
+    // Check permissions
+    if (!current_user_can('manage_options')) {
+        wp_send_json_error(['message' => 'Insufficient permissions']);
+    }
+
+    $brand = isset($_POST['brand']) ? sanitize_text_field($_POST['brand']) : null;
+
+    // Get instances
+    $jobs_store = isset($GLOBALS['shopcommerce_jobs_store']) ? $GLOBALS['shopcommerce_jobs_store'] : null;
+    $logger = isset($GLOBALS['shopcommerce_logger']) ? $GLOBALS['shopcommerce_logger'] : null;
+
+    if (!$jobs_store) {
+        wp_send_json_error(['message' => 'Jobs store not available']);
+    }
+
+    try {
+        $reset_count = $jobs_store->reset_failed_batches($brand);
+
+        if ($logger) {
+            $logger->info('Reset failed batches via AJAX', [
+                'brand' => $brand,
+                'reset_count' => $reset_count
+            ]);
+        }
+
+        wp_send_json_success([
+            'message' => "Reset {$reset_count} failed batches for retry",
+            'reset_count' => $reset_count
+        ]);
+    } catch (Exception $e) {
+        if ($logger) {
+            $logger->error('Failed to reset failed batches via AJAX', [
+                'brand' => $brand,
+                'error' => $e->getMessage()
+            ]);
+        }
+        wp_send_json_error([
+            'message' => 'Failed to reset failed batches: ' . $e->getMessage()
+        ]);
+    }
+}
+
+/**
+ * AJAX handler for cleaning up old batches
+ */
+function shopcommerce_ajax_cleanup_old_batches() {
+    // Verify nonce
+    check_ajax_referer('shopcommerce_admin_nonce', 'nonce');
+
+    // Check permissions
+    if (!current_user_can('manage_options')) {
+        wp_send_json_error(['message' => 'Insufficient permissions']);
+    }
+
+    $days_old = isset($_POST['days_old']) ? intval($_POST['days_old']) : 7;
+
+    // Get instances
+    $jobs_store = isset($GLOBALS['shopcommerce_jobs_store']) ? $GLOBALS['shopcommerce_jobs_store'] : null;
+    $batch_processor = isset($GLOBALS['shopcommerce_batch_processor']) ? $GLOBALS['shopcommerce_batch_processor'] : null;
+    $logger = isset($GLOBALS['shopcommerce_logger']) ? $GLOBALS['shopcommerce_logger'] : null;
+
+    if (!$jobs_store || !$batch_processor) {
+        wp_send_json_error(['message' => 'Required services not available']);
+    }
+
+    try {
+        $batches_deleted = $jobs_store->cleanup_old_batches($days_old);
+        $progress_cleaned = $batch_processor->cleanup_old_progress(24); // Clean progress older than 24 hours
+
+        if ($logger) {
+            $logger->info('Cleaned up old batches via AJAX', [
+                'days_old' => $days_old,
+                'batches_deleted' => $batches_deleted,
+                'progress_cleaned' => $progress_cleaned
+            ]);
+        }
+
+        wp_send_json_success([
+            'message' => "Cleaned up {$batches_deleted} old batches and {$progress_cleaned} progress entries",
+            'batches_deleted' => $batches_deleted,
+            'progress_cleaned' => $progress_cleaned
+        ]);
+    } catch (Exception $e) {
+        if ($logger) {
+            $logger->error('Failed to cleanup old batches via AJAX', [
+                'days_old' => $days_old,
+                'error' => $e->getMessage()
+            ]);
+        }
+        wp_send_json_error([
+            'message' => 'Failed to cleanup old batches: ' . $e->getMessage()
+        ]);
+    }
+}
+
+/**
+ * Handle brand completion check
+ */
+function shopcommerce_ajax_check_brand_completion() {
+    check_ajax_referer('shopcommerce_admin_nonce', 'nonce');
+
+    if (!current_user_can('manage_woocommerce')) {
+        wp_send_json_error(['message' => 'Insufficient permissions']);
+    }
+
+    $brand = isset($_POST['brand']) ? sanitize_text_field($_POST['brand']) : '';
+    if (empty($brand)) {
+        wp_send_json_error(['message' => 'Brand is required']);
+    }
+
+    try {
+        global $shopcommerce_sync;
+        if (!$shopcommerce_sync) {
+            throw new Exception('Sync handler not available');
+        }
+
+        $result = $shopcommerce_sync->check_and_handle_brand_completion($brand);
+        wp_send_json_success($result);
+
+    } catch (Exception $e) {
+        wp_send_json_error([
+            'message' => 'Failed to check brand completion: ' . $e->getMessage()
+        ]);
+    }
+}
+add_action('wp_ajax_shopcommerce_check_brand_completion', 'shopcommerce_ajax_check_brand_completion');

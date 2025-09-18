@@ -145,17 +145,15 @@ class ShopCommerce_Sync {
                 'catalog_count' => count($catalog)
             ]);
 
-            // Process catalog in batches
-            $results = $this->process_catalog($catalog, $brand);
+            // Queue catalog for batch processing
+            $results = $this->queue_catalog_for_processing($catalog, $brand, $categories);
 
-            // Log sync completion
-            $this->logger->log_activity('sync_complete', 'Sync completed for brand: ' . $brand, [
+            // Log sync queuing completion
+            $this->logger->log_activity('sync_queued', 'Sync queued for brand: ' . $brand, [
                 'brand' => $brand,
                 'categories' => $categories,
-                'products_processed' => $results['processed_count'],
-                'created' => $results['created'],
-                'updated' => $results['updated'],
-                'errors' => $results['errors']
+                'products_count' => count($catalog),
+                'batches_queued' => $results['batches_queued']
             ]);
 
             return array_merge($results, ['success' => true]);
@@ -180,6 +178,94 @@ class ShopCommerce_Sync {
                 'categories' => $categories
             ];
         }
+    }
+
+    /**
+     * Queue catalog for asynchronous batch processing
+     *
+     * @param array $catalog Product catalog data
+     * @param string $brand Brand name
+     * @param array $categories Category codes
+     * @return array Queuing results
+     */
+    private function queue_catalog_for_processing($catalog, $brand, $categories) {
+        $this->logger->info('Queueing catalog for batch processing', [
+            'total_products' => count($catalog),
+            'brand' => $brand,
+            'categories_count' => count($categories)
+        ]);
+
+        if (!$this->jobs_store) {
+            throw new Exception('Jobs store not available for batch processing');
+        }
+
+        // Use batch processor batch size for consistency
+        $batch_size = ShopCommerce_Batch_Processor::DEFAULT_BATCH_SIZE;
+        $product_batches = array_chunk($catalog, $batch_size);
+        $total_batches = count($product_batches);
+
+        $this->logger->info('Creating batches for queue', [
+            'total_products' => count($catalog),
+            'batch_size' => $batch_size,
+            'total_batches' => $total_batches,
+            'brand' => $brand
+        ]);
+
+        $queued_batches = 0;
+        $batch_ids = [];
+
+        foreach ($product_batches as $batch_index => $batch) {
+            try {
+                // Create batch in queue
+                $batch_id = $this->jobs_store->add_batch_to_queue(
+                    $brand,
+                    $categories,
+                    $batch,
+                    $batch_index + 1, // 1-based index
+                    $total_batches
+                );
+
+                if ($batch_id) {
+                    $batch_ids[] = $batch_id;
+                    $queued_batches++;
+
+                    $this->logger->debug('Batch queued successfully', [
+                        'batch_id' => $batch_id,
+                        'batch_index' => $batch_index + 1,
+                        'total_batches' => $total_batches,
+                        'products_in_batch' => count($batch),
+                        'brand' => $brand
+                    ]);
+                } else {
+                    $this->logger->error('Failed to queue batch', [
+                        'batch_index' => $batch_index + 1,
+                        'brand' => $brand
+                    ]);
+                }
+
+            } catch (Exception $e) {
+                $this->logger->error('Error queuing batch', [
+                    'batch_index' => $batch_index + 1,
+                    'error' => $e->getMessage(),
+                    'brand' => $brand
+                ]);
+            }
+        }
+
+        $this->logger->info('Catalog queuing completed', [
+            'brand' => $brand,
+            'total_batches' => $total_batches,
+            'queued_batches' => $queued_batches,
+            'failed_batches' => $total_batches - $queued_batches
+        ]);
+
+        return [
+            'catalog_count' => count($catalog),
+            'batches_queued' => $queued_batches,
+            'total_batches' => $total_batches,
+            'failed_batches' => $total_batches - $queued_batches,
+            'batch_ids' => $batch_ids
+        ];
     }
 
     /**
@@ -430,6 +516,96 @@ class ShopCommerce_Sync {
     }
 
     /**
+     * Check and handle brand completion when all batches are processed
+     *
+     * @param string $brand Brand name to check
+     * @return array Completion status
+     */
+    public function check_and_handle_brand_completion($brand) {
+        $this->logger->info('Checking brand completion', ['brand' => $brand]);
+
+        if (!$this->jobs_store) {
+            return [
+                'success' => false,
+                'error' => 'Jobs store not available'
+            ];
+        }
+
+        try {
+            // Get queue stats for the brand
+            $queue_stats = $this->jobs_store->get_queue_stats();
+            $brand_stats = isset($queue_stats['by_brand'][$brand]) ? $queue_stats['by_brand'][$brand] : null;
+
+            if (!$brand_stats) {
+                return [
+                    'success' => false,
+                    'error' => 'No stats found for brand: ' . $brand
+                ];
+            }
+
+            $is_completed = ($brand_stats['pending'] === 0 && $brand_stats['processing'] === 0);
+
+            if ($is_completed) {
+                $this->logger->info('All batches completed for brand', [
+                    'brand' => $brand,
+                    'total_batches' => $brand_stats['total'],
+                    'completed' => $brand_stats['completed'],
+                    'failed' => $brand_stats['failed']
+                ]);
+
+                // Get batch processor for progress tracking
+                global $shopcommerce_batch_processor;
+                if ($shopcommerce_batch_processor) {
+                    $progress = $shopcommerce_batch_processor->get_brand_progress($brand);
+
+                    if ($progress) {
+                        // Log brand completion activity
+                        $this->logger->log_activity('brand_sync_complete', 'Brand sync completed: ' . $brand, [
+                            'brand' => $brand,
+                            'total_products' => $progress['total_products'],
+                            'processed_products' => $progress['processed_products'],
+                            'created' => $progress['created'],
+                            'updated' => $progress['updated'],
+                            'errors' => $progress['errors'],
+                            'completion_percentage' => $progress['completion_percentage'],
+                            'time_elapsed' => $progress['time_elapsed']
+                        ]);
+
+                        // Clear brand progress tracking
+                        $shopcommerce_batch_processor->clear_brand_progress($brand);
+                    }
+                }
+
+                return [
+                    'success' => true,
+                    'completed' => true,
+                    'brand' => $brand,
+                    'stats' => $brand_stats
+                ];
+            } else {
+                return [
+                    'success' => true,
+                    'completed' => false,
+                    'brand' => $brand,
+                    'stats' => $brand_stats
+                ];
+            }
+
+        } catch (Exception $e) {
+            $this->logger->error('Error checking brand completion', [
+                'brand' => $brand,
+                'error' => $e->getMessage()
+            ]);
+
+            return [
+                'success' => false,
+                'error' => $e->getMessage(),
+                'brand' => $brand
+            ];
+        }
+    }
+
+    /**
      * Get sync statistics and status
      *
      * @return array Sync statistics
@@ -447,11 +623,30 @@ class ShopCommerce_Sync {
         // Get API status
         $api_status = $this->api_client->get_status();
 
+        // Get batch processing statistics
+        $batch_stats = [];
+        if ($this->jobs_store) {
+            $batch_stats = $this->jobs_store->get_queue_stats();
+        }
+
+        // Get active brand progress
+        $brand_progress = [];
+        global $shopcommerce_batch_processor;
+        if ($shopcommerce_batch_processor) {
+            $processing_stats = $shopcommerce_batch_processor->get_processing_stats();
+            $brand_progress = $processing_stats['active_brands'];
+        }
+
         return [
             'products' => $product_stats,
             'activity' => $activity_stats,
             'queue' => $queue_status,
             'api' => $api_status,
+            'batch_processing' => [
+                'queue_stats' => $batch_stats,
+                'active_brands' => $brand_progress,
+                'total_active_brands' => count($brand_progress)
+            ],
             'last_check' => current_time('mysql')
         ];
     }

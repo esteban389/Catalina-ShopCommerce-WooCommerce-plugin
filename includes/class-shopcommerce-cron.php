@@ -77,15 +77,23 @@ if (!wp_next_scheduled(SYNC_HOOK_NAME)) {
             
             // Schedule the main sync hook
             $scheduled = $this->schedule_cron_event(self::DEFAULT_INTERVAL);
-            
+
             if (!$scheduled) {
                 throw new Exception('Failed to schedule initial cron event');
             }
-            
+
             // Verify the schedule was created
             $next_run = wp_next_scheduled(self::HOOK_NAME);
             if (!$next_run) {
                 throw new Exception('Cron event was not actually scheduled');
+            }
+
+            // Schedule batch processing hook (every 5 minutes)
+            if (!wp_next_scheduled(BATCH_PROCESS_HOOK_NAME)) {
+                $batch_scheduled = wp_schedule_event(time(), 'every_5_minutes', BATCH_PROCESS_HOOK_NAME);
+                $this->logger->info('Batch processing cron scheduled', [
+                    'scheduled' => $batch_scheduled
+                ]);
             }
             
             $this->logger->info('Activation completed successfully', [
@@ -121,6 +129,9 @@ if (!wp_next_scheduled(SYNC_HOOK_NAME)) {
 
         // Clear scheduled hooks using the centralized method
         $this->clear_cron_event();
+
+        // Clear batch processing hook
+        wp_clear_scheduled_hook(BATCH_PROCESS_HOOK_NAME);
     }
 
     /**
@@ -252,6 +263,13 @@ if (!wp_next_scheduled(SYNC_HOOK_NAME)) {
             $schedules['every_minute'] = [
                 'interval' => 60,
                 'display' => __('Every Minute', 'shopcommerce-product-sync-plugin')
+            ];
+        }
+
+        if (!isset($schedules['every_5_minutes'])) {
+            $schedules['every_5_minutes'] = [
+                'interval' => 300,
+                'display' => __('Every 5 Minutes', 'shopcommerce-product-sync-plugin')
             ];
         }
 
@@ -751,6 +769,59 @@ if (!wp_next_scheduled(SYNC_HOOK_NAME)) {
             return [
                 'success' => false,
                 'message' => 'Error fixing cron: ' . $e->getMessage()
+            ];
+        }
+    }
+
+    /**
+     * Process pending batches automatically
+     * This method is called by a separate cron hook for batch processing
+     *
+     * @return array Processing results
+     */
+    public function process_pending_batches() {
+        $this->logger->info('Starting automatic batch processing');
+
+        try {
+            global $shopcommerce_batch_processor;
+            if (!$shopcommerce_batch_processor) {
+                throw new Exception('Batch processor not available');
+            }
+
+            // Process up to 3 batches per cron run to prevent timeouts
+            $results = $shopcommerce_batch_processor->process_pending_batches(3);
+
+            // Check for brand completion after processing
+            if (isset($results['results']) && !empty($results['results'])) {
+                global $shopcommerce_sync;
+                if ($shopcommerce_sync) {
+                    // Get unique brands from processed batches
+                    $processed_brands = [];
+                    foreach ($results['results'] as $result) {
+                        if (isset($result['brand']) && !in_array($result['brand'], $processed_brands)) {
+                            $processed_brands[] = $result['brand'];
+                        }
+                    }
+
+                    // Check completion for each brand
+                    foreach ($processed_brands as $brand) {
+                        $shopcommerce_sync->check_and_handle_brand_completion($brand);
+                    }
+                }
+            }
+
+            $this->logger->info('Automatic batch processing completed', $results);
+            return $results;
+
+        } catch (Exception $e) {
+            $this->logger->error('Automatic batch processing failed', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+
+            return [
+                'success' => false,
+                'error' => $e->getMessage()
             ];
         }
     }

@@ -136,6 +136,91 @@ if (!defined('ABSPATH')) {
             <?php endif; ?>
         </div>
 
+        <!-- Batch Processing -->
+        <div class="control-section">
+            <h2>Batch Processing</h2>
+            <p>Manage asynchronous batch processing queue.</p>
+
+            <?php if (isset($GLOBALS['shopcommerce_jobs_store'])): ?>
+                <?php
+                $jobs_store = $GLOBALS['shopcommerce_jobs_store'];
+                $batch_stats = $jobs_store->get_queue_stats();
+                ?>
+
+                <div class="batch-info">
+                    <div class="batch-stat">
+                        <span class="stat-label">Pending Batches:</span>
+                        <span class="stat-value"><?php echo $batch_stats['pending'] ?? 0; ?></span>
+                    </div>
+                    <div class="batch-stat">
+                        <span class="stat-label">Processing:</span>
+                        <span class="stat-value"><?php echo $batch_stats['processing'] ?? 0; ?></span>
+                    </div>
+                    <div class="batch-stat">
+                        <span class="stat-label">Completed:</span>
+                        <span class="stat-value"><?php echo $batch_stats['completed'] ?? 0; ?></span>
+                    </div>
+                    <div class="batch-stat">
+                        <span class="stat-label">Failed:</span>
+                        <span class="stat-value"><?php echo $batch_stats['failed'] ?? 0; ?></span>
+                    </div>
+                </div>
+
+                <div class="batch-actions">
+                    <button type="button" class="button button-secondary" id="refresh-batch-queue-btn">
+                        Refresh Queue
+                    </button>
+                    <button type="button" class="button button-secondary" id="process-batch-btn">
+                        Process Next Batch
+                    </button>
+                    <button type="button" class="button button-secondary" id="reset-failed-batches-btn">
+                        Reset Failed Batches
+                    </button>
+                    <button type="button" class="button button-link delete" id="cleanup-old-batches-btn">
+                        Cleanup Old Batches
+                    </button>
+                </div>
+
+                <?php if (!empty($batch_stats['by_brand'])): ?>
+                <div class="batch-by-brand">
+                    <h3>Batches by Brand</h3>
+                    <table class="wp-list-table widefat fixed striped">
+                        <thead>
+                            <tr>
+                                <th>Brand</th>
+                                <th>Pending</th>
+                                <th>Processing</th>
+                                <th>Completed</th>
+                                <th>Failed</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php foreach ($batch_stats['by_brand'] as $brand => $stats): ?>
+                            <tr>
+                                <td><strong><?php echo esc_html($brand); ?></strong></td>
+                                <td><?php echo $stats['pending']; ?></td>
+                                <td><?php echo $stats['processing']; ?></td>
+                                <td><?php echo $stats['completed']; ?></td>
+                                <td><?php echo $stats['failed']; ?></td>
+                                <td>
+                                    <button type="button" class="button button-small check-brand-completion-btn"
+                                            data-brand="<?php echo esc_attr($brand); ?>">
+                                        Check Completion
+                                    </button>
+                                </td>
+                            </tr>
+                            <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                </div>
+                <?php endif; ?>
+
+            <?php else: ?>
+                <p>Batch processing not available.</p>
+            <?php endif; ?>
+        </div>
+
         <!-- Cron Settings -->
         <div class="control-section">
             <h2>Cron Settings</h2>

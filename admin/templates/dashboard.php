@@ -48,19 +48,57 @@ if (!defined('ABSPATH')) {
         </div>
 
         <div class="card">
-            <h3>Queue Status</h3>
-            <div class="stat-number"><?php echo esc_html($statistics['queue']['current_job']['brand'] ?? 'Idle'); ?></div>
-            <div class="stat-label">Current Job</div>
+            <h3>Batch Queue</h3>
+            <div class="stat-number">
+                <?php
+                $batch_stats = $statistics['batch_processing']['queue_stats'] ?? [];
+                $pending_batches = $batch_stats['pending'] ?? 0;
+                $processing_batches = $batch_stats['processing'] ?? 0;
+                echo $pending_batches + $processing_batches;
+                ?>
+            </div>
+            <div class="stat-label">Batches Pending</div>
         </div>
 
         <div class="card">
-            <h3>API Status</h3>
-            <div class="stat-number <?php echo $statistics['api']['token_cached'] ? 'status-good' : 'status-warning'; ?>">
-                <?php echo $statistics['api']['token_cached'] ? 'Connected' : 'Disconnected'; ?>
+            <h3>Active Brands</h3>
+            <div class="stat-number">
+                <?php
+                $active_brands = $statistics['batch_processing']['active_brands'] ?? [];
+                echo count($active_brands);
+                ?>
             </div>
-            <div class="stat-label">Connection</div>
+            <div class="stat-label">Processing</div>
         </div>
     </div>
+
+    <!-- Batch Processing Status -->
+    <?php if (!empty($statistics['batch_processing']['active_brands'])): ?>
+    <div class="shopcommerce-batch-status">
+        <h2>Batch Processing Status</h2>
+        <div class="batch-progress-container">
+            <?php foreach ($statistics['batch_processing']['active_brands'] as $brand => $progress): ?>
+            <div class="batch-progress-item">
+                <div class="batch-progress-header">
+                    <span class="brand-name"><?php echo esc_html($brand); ?></span>
+                    <span class="progress-percentage"><?php echo esc_html($progress['completion_percentage'] ?? 0); ?>%</span>
+                </div>
+                <div class="progress-bar">
+                    <div class="progress-fill" style="width: <?php echo esc_html($progress['completion_percentage'] ?? 0); ?>%"></div>
+                </div>
+                <div class="batch-progress-details">
+                    <span class="batches-completed">
+                        <?php echo esc_html($progress['completed_batches'] ?? 0); ?> / <?php echo esc_html($progress['total_batches'] ?? 0); ?> batches
+                    </span>
+                    <span class="products-processed">
+                        <?php echo esc_html($progress['processed_products'] ?? 0); ?> products
+                    </span>
+                </div>
+            </div>
+            <?php endforeach; ?>
+        </div>
+    </div>
+    <?php endif; ?>
 
     <!-- Quick Actions -->
     <div class="shopcommerce-quick-actions">

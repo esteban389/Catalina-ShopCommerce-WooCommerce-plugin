@@ -783,6 +783,216 @@
     }
 
     /**
+     * Batch Processing Management
+     */
+    // Refresh batch queue
+    $(document).on('click', '#refresh-batch-queue-btn', function(e) {
+        e.preventDefault();
+        refreshBatchQueue($(this));
+    });
+
+    // Process next batch
+    $(document).on('click', '#process-batch-btn', function(e) {
+        e.preventDefault();
+        processNextBatch($(this));
+    });
+
+    // Reset failed batches
+    $(document).on('click', '#reset-failed-batches-btn', function(e) {
+        e.preventDefault();
+        resetFailedBatches($(this));
+    });
+
+    // Cleanup old batches
+    $(document).on('click', '#cleanup-old-batches-btn', function(e) {
+        e.preventDefault();
+        cleanupOldBatches($(this));
+    });
+
+    // Check brand completion
+    $(document).on('click', '.check-brand-completion-btn', function(e) {
+        e.preventDefault();
+        checkBrandCompletion($(this));
+    });
+
+    function refreshBatchQueue($button) {
+        $.ajax({
+            url: ajaxurl,
+            type: 'POST',
+            data: {
+                action: 'shopcommerce_get_batch_queue_stats',
+                nonce: shopcommerce_admin.nonce
+            },
+            beforeSend: function() {
+                $button.prop('disabled', true).text('Refreshing...');
+            },
+            success: function(response) {
+                if (response.success) {
+                    showMessage('Batch queue refreshed successfully', 'success');
+                    // Reload page to show updated stats
+                    setTimeout(function() {
+                        window.location.reload();
+                    }, 1000);
+                } else {
+                    showMessage('Failed to refresh batch queue: ' + response.data.message, 'error');
+                }
+            },
+            error: function() {
+                showMessage('Failed to refresh batch queue', 'error');
+            },
+            complete: function() {
+                $button.prop('disabled', false).text('Refresh Queue');
+            }
+        });
+    }
+
+    function processNextBatch($button) {
+        $.ajax({
+            url: ajaxurl,
+            type: 'POST',
+            data: {
+                action: 'shopcommerce_process_pending_batches',
+                nonce: shopcommerce_admin.nonce,
+                limit: 1
+            },
+            beforeSend: function() {
+                $button.prop('disabled', true).text('Processing...');
+            },
+            success: function(response) {
+                if (response.success) {
+                    var result = response.data;
+                    showMessage('Batch processed successfully', 'success');
+                    if (result.results && result.results.length > 0) {
+                        showMessage('Processed ' + result.results.length + ' batch(es)', 'success');
+                    }
+                    // Reload page to show updated stats
+                    setTimeout(function() {
+                        window.location.reload();
+                    }, 1000);
+                } else {
+                    showMessage('Failed to process batch: ' + response.data.message, 'error');
+                }
+            },
+            error: function() {
+                showMessage('Failed to process batch', 'error');
+            },
+            complete: function() {
+                $button.prop('disabled', false).text('Process Next Batch');
+            }
+        });
+    }
+
+    function resetFailedBatches($button) {
+        if (!confirm('Are you sure you want to reset all failed batches? This will move them back to pending status.')) {
+            return;
+        }
+
+        $.ajax({
+            url: ajaxurl,
+            type: 'POST',
+            data: {
+                action: 'shopcommerce_reset_failed_batches',
+                nonce: shopcommerce_admin.nonce
+            },
+            beforeSend: function() {
+                $button.prop('disabled', true).text('Resetting...');
+            },
+            success: function(response) {
+                if (response.success) {
+                    showMessage('Reset ' + response.data.reset_count + ' failed batches', 'success');
+                    // Reload page to show updated stats
+                    setTimeout(function() {
+                        window.location.reload();
+                    }, 1000);
+                } else {
+                    showMessage('Failed to reset failed batches: ' + response.data.message, 'error');
+                }
+            },
+            error: function() {
+                showMessage('Failed to reset failed batches', 'error');
+            },
+            complete: function() {
+                $button.prop('disabled', false).text('Reset Failed Batches');
+            }
+        });
+    }
+
+    function cleanupOldBatches($button) {
+        var days = prompt('Enter number of days old to cleanup (default 7):', '7');
+        if (!days || isNaN(days)) {
+            return;
+        }
+
+        $.ajax({
+            url: ajaxurl,
+            type: 'POST',
+            data: {
+                action: 'shopcommerce_cleanup_old_batches',
+                nonce: shopcommerce_admin.nonce,
+                days_old: parseInt(days)
+            },
+            beforeSend: function() {
+                $button.prop('disabled', true).text('Cleaning up...');
+            },
+            success: function(response) {
+                if (response.success) {
+                    showMessage('Cleaned up ' + response.data.batches_deleted + ' batches and ' + response.data.progress_cleaned + ' progress entries', 'success');
+                    // Reload page to show updated stats
+                    setTimeout(function() {
+                        window.location.reload();
+                    }, 1000);
+                } else {
+                    showMessage('Failed to cleanup old batches: ' + response.data.message, 'error');
+                }
+            },
+            error: function() {
+                showMessage('Failed to cleanup old batches', 'error');
+            },
+            complete: function() {
+                $button.prop('disabled', false).text('Cleanup Old Batches');
+            }
+        });
+    }
+
+    function checkBrandCompletion($button) {
+        var brand = $button.data('brand');
+        if (!brand) {
+            return;
+        }
+
+        $.ajax({
+            url: ajaxurl,
+            type: 'POST',
+            data: {
+                action: 'shopcommerce_check_brand_completion',
+                nonce: shopcommerce_admin.nonce,
+                brand: brand
+            },
+            beforeSend: function() {
+                $button.prop('disabled', true).text('Checking...');
+            },
+            success: function(response) {
+                if (response.success) {
+                    var result = response.data;
+                    if (result.completed) {
+                        showMessage('Brand "' + brand + '" sync completed successfully!', 'success');
+                    } else {
+                        showMessage('Brand "' + brand + '" sync still in progress. ' + (result.stats ? result.stats.pending + ' pending, ' + result.stats.processing + ' processing' : ''), 'info');
+                    }
+                } else {
+                    showMessage('Failed to check brand completion: ' + response.data.message, 'error');
+                }
+            },
+            error: function() {
+                showMessage('Failed to check brand completion', 'error');
+            },
+            complete: function() {
+                $button.prop('disabled', false).text('Check Completion');
+            }
+        });
+    }
+
+    /**
      * Utility functions
      */
     function escapeHtml(text) {
