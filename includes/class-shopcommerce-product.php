@@ -83,6 +83,12 @@ class ShopCommerce_Product {
                 }
             } else {
                 // Create new product with additional safety checks
+                $this->logger->info('No duplicate product detected, will create', [
+                    'sku' => $sku,
+                    'name' => $sanitized_data['Name'],
+                    'brand' => $brand
+                ]);
+
                 $results = $this->create_product_safely($sanitized_data, $brand);
                 $results['action'] = 'created';
             }

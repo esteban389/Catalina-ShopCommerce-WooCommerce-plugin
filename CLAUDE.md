@@ -88,11 +88,39 @@ Since this is a WordPress plugin without a build system, development involves:
 5. **Manual Sync**: Use admin interface to trigger sync manually
 
 ### Debug Commands
-The plugin includes a debug class for cron diagnostics:
+The plugin includes comprehensive debug utilities:
+
+**Cron Diagnostics:**
 ```php
 // To run cron diagnostics
 $debug = new ShopCommerce_Cron_Debug();
 $debug->run_diagnostics();
+```
+
+**Cache Management:**
+```php
+// Clear jobs store cache (if available)
+if (isset($GLOBALS['shopcommerce_jobs_store'])) {
+    $GLOBALS['shopcommerce_jobs_store']->clear_cache();
+}
+
+// Clear all sync cache and reset state
+if (isset($GLOBALS['shopcommerce_sync'])) {
+    $GLOBALS['shopcommerce_sync']->clear_cache();
+}
+```
+
+**Manual Sync Operations:**
+```php
+// Run full sync for all brands
+if (isset($GLOBALS['shopcommerce_sync'])) {
+    $result = $GLOBALS['shopcommerce_sync']->run_full_sync();
+}
+
+// Test API connection
+if (isset($GLOBALS['shopcommerce_sync'])) {
+    $result = $GLOBALS['shopcommerce_sync']->test_connection();
+}
 ```
 
 ### Code Standards
@@ -100,6 +128,12 @@ $debug->run_diagnostics();
 - Use proper PHP documentation blocks
 - Implement WordPress security best practices
 - No automated linting/building configured
+
+### Important Development Notes
+- **Global Instances**: All core classes are available as `$GLOBALS['shopcommerce_*']` variables
+- **Dependencies**: Logger is always initialized first to ensure proper logging throughout the system
+- **Database Tables**: Created automatically on plugin activation in `ShopCommerce_Config` and `ShopCommerce_Jobs_Store`
+- **Category Codes**: Use numeric codes [1, 7, 12, 14, 18] for API communication, not descriptive names
 
 ### Admin Interface (Enhanced)
 - **Dashboard**: ShopCommerce Sync → Dashboard
@@ -147,14 +181,34 @@ $debug->run_diagnostics();
 ## File Structure Details
 
 ### Core Classes (Updated)
+- **ShopCommerce_Jobs_Store**: Centralized management of brands, categories, and sync jobs with caching (5-minute TTL)
 - **ShopCommerce_Config**: Dynamic configuration management with database storage, API brand creation, and reset functionality
-- **ShopCommerce_Logger**: Centralized logging with activity tracking
-- **ShopCommerce_API**: API client with token management and error handling
-- **ShopCommerce_Helpers**: Utility functions for WooCommerce operations
-- **ShopCommerce_Product**: WooCommerce product creation and updates
-- **ShopCommerce_Cron**: Cron job scheduling and management
-- **ShopCommerce_Cron_Debug**: Debug utilities for cron system diagnostics
-- **ShopCommerce_Sync**: Main sync coordination and business logic
+- **ShopCommerce_Logger**: Centralized logging with activity tracking and file-based logging
+- **ShopCommerce_API**: API client with OAuth2 authentication, token management, and error handling
+- **ShopCommerce_Helpers**: Utility functions for WooCommerce operations and fallback job management
+- **ShopCommerce_Product**: WooCommerce product creation, updates, and batch processing
+- **ShopCommerce_Cron**: WordPress cron job scheduling and management with custom schedule intervals
+- **ShopCommerce_Cron_Debug**: Comprehensive debug utilities for cron system diagnostics
+- **ShopCommerce_Sync**: Main sync coordination and business logic with job queue processing
+
+### Critical Architecture Patterns
+
+**Jobs Management Hierarchy:**
+1. **Primary**: `ShopCommerce_Jobs_Store` (cached, database-driven)
+2. **Secondary**: `ShopCommerce_Config` (dynamic configuration)
+3. **Fallback**: `ShopCommerce_Helpers` (hardcoded configuration)
+4. **Ultimate Fallback**: `ShopCommerce_Cron` (static hardcoded jobs)
+
+**Brand-Category Handling:**
+- Brands with "all categories" must send all available category codes `[1, 7, 12, 14, 18]` to API
+- Empty arrays are NOT sent - they prevent the `X-CATEGORIA` header from being added
+- Fixed in: `ShopCommerce_Jobs_Store::get_jobs()`, `ShopCommerce_Config::build_jobs_list()`, `ShopCommerce_Helpers::build_jobs_list()`
+
+**API Communication:**
+- **Authentication**: OAuth2 password grant with token caching
+- **Headers**: `Authorization: Bearer {token}`, `X-MARKS: {brand}`, `X-CATEGORIA: {comma_separated_codes}`
+- **Timeout**: 840 seconds (14 minutes)
+- **Category Codes**: Numeric only [1=Accessories, 7=Computers, 12=Printing, 14=Video, 18=Servers]
 
 ### Additional Functions
 - **functions-orders.php**: Order management and external provider product detection
@@ -203,24 +257,37 @@ $debug->run_diagnostics();
 - **Current Version**: 2.5.0 (as defined in index.php plugin header)
 - **Architecture Version**: 2.0.0+ (modular rewrite)
 - **Compatibility**: WordPress 5.0+, WooCommerce 3.0+, PHP 7.2+
-- **Note**: Version constant in index.php shows 2.0.0 but plugin header defines 2.5.0
+- **Note**: Version constant `SHOPCOMMERCE_SYNC_VERSION` in index.php shows 2.0.0 but plugin header defines 2.5.0
+- **Recent Architecture Changes**: Jobs Store integration, enhanced brand/category management, improved caching
+
+### Critical File Locations for Category Management
+- **includes/class-shopcommerce-jobs-store.php:202-213** - Jobs Store category fetching logic
+- **includes/class-shopcommerce-config.php:494-505** - Config manager category fetching logic
+- **includes/class-shopcommerce-helpers.php:795-807** - Helpers fallback category logic
+- **includes/class-shopcommerce-cron.php:331-365** - Cron scheduler hardcoded fallback jobs
+- **includes/class-shopcommerce-api.php:~100-120** - API client category header implementation
 
 ## Database Schema
 
-The plugin creates custom database tables for configuration management:
+The plugin creates custom database tables for configuration and job management:
 
 ### Tables Created
-- `wp_shopcommerce_brands`: Stores brand configurations
-- `wp_shopcommerce_categories`: Stores category mappings
-- `wp_shopcommerce_brand_categories`: Stores brand-category relationships
+- `wp_shopcommerce_brands`: Stores brand configurations (id, name, slug, description, is_active)
+- `wp_shopcommerce_categories`: Stores category mappings (id, name, code, description, is_active)
+- `wp_shopcommerce_brand_categories`: Stores brand-category relationships (brand_id, category_id)
 
 ### Table Management
-- Tables are created automatically on plugin activation
-- Managed through ShopCommerce_Config class
+- Tables are created automatically on plugin activation by both `ShopCommerce_Jobs_Store` and `ShopCommerce_Config`
+- Managed through centralized Jobs Store with 5-minute caching
 - Supports dynamic brand and category configuration through admin interface
-- Includes automatic initialization with default hardcoded brand/category relationships
+- Includes automatic initialization with default brand/category relationships:
+  - **HP Inc**, **DELL**, **LENOVO**: All categories [1, 7, 12, 14, 18]
+  - **APPLE**: Accessories and Computers [1, 7]
+  - **ASUS**: Computers [7]
+  - **BOSE**, **EPSON**, **JBL**: All categories [1, 7, 12, 14, 18]
 - Supports creating brands from API responses with duplicate detection
 - Provides reset functionality to restore default configuration
+- **Important**: Both classes create tables independently - ensure proper activation sequence
 
 ## Important Implementation Details
 

@@ -24,6 +24,7 @@ define('SHOPCOMMERCE_SYNC_INCLUDES_DIR', SHOPCOMMERCE_SYNC_PLUGIN_DIR . 'include
 define('SHOPCOMMERCE_SYNC_ASSETS_DIR', SHOPCOMMERCE_SYNC_PLUGIN_URL . 'assets/');
 define('SHOPCOMMERCE_SYNC_ASSETS_DATA_DIR', SHOPCOMMERCE_SYNC_PLUGIN_DIR . 'data/');
 define('SHOPCOMMERCE_SYNC_LOGS_DIR', SHOPCOMMERCE_SYNC_PLUGIN_DIR . 'logs/');
+define('SYNC_HOOK_NAME', 'shopcommerce_product_sync_hook');
 
 // Include the main classes
 require_once SHOPCOMMERCE_SYNC_INCLUDES_DIR . 'class-shopcommerce-logger.php';
@@ -101,6 +102,17 @@ function shopcommerce_sync_activate()
         $cron_scheduler->activate();
     }
 }
+
+add_action(SYNC_HOOK_NAME,'shopcommerce_sync_products');
+
+function shopcommerce_sync_products()
+{
+    if (class_exists('ShopCommerce_Sync')) {
+        $sync_handler = $GLOBALS['shopcommerce_sync'];
+        $sync_handler->execute_sync();
+    }
+}
+
 
 // Hook into WooCommerce order completion for metadata and logging
 add_action('woocommerce_order_status_completed', 'shopcommerce_handle_order_completion');

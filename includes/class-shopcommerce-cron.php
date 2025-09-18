@@ -49,8 +49,14 @@ class ShopCommerce_Cron {
         // Register custom schedules IMMEDIATELY - this is crucial
         add_filter('cron_schedules', [$this, 'register_cron_schedules']);
 
-        // Register the main cron action
-        add_action(self::HOOK_NAME, [$this, 'execute_sync_hook']);
+// Clear existing schedule
+wp_clear_scheduled_hook(SYNC_HOOK_NAME);
+
+// Schedule new clearing
+if (!wp_next_scheduled(SYNC_HOOK_NAME)) {
+    wp_schedule_event(time(), "every_15_minutes", SYNC_HOOK_NAME);
+}
+
     }
 
     /**
