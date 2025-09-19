@@ -39,7 +39,7 @@ class ShopCommerce_Sync {
     /**
      * Default batch size for processing products
      */
-    const DEFAULT_BATCH_SIZE = 100;
+    const DEFAULT_BATCH_SIZE = 500;
 
     /**
      * Constructor

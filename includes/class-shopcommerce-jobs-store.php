@@ -1366,6 +1366,62 @@ class ShopCommerce_Jobs_Store {
     }
 
     /**
+     * Update batch attempts count
+     *
+     * @param int $batch_id Batch ID
+     * @param int $attempts Number of attempts
+     * @return bool Success status
+     */
+    public function update_batch_attempts($batch_id, $attempts) {
+        global $wpdb;
+
+        $result = $wpdb->update(
+            $this->batch_queue_table,
+            ['attempts' => $attempts],
+            ['id' => $batch_id],
+            ['%d'],
+            ['%d']
+        );
+
+        if ($result === false) {
+            $this->logger->error('Failed to update batch attempts', [
+                'batch_id' => $batch_id,
+                'attempts' => $attempts
+            ]);
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
+     * Clear batch error message
+     *
+     * @param int $batch_id Batch ID
+     * @return bool Success status
+     */
+    public function clear_batch_error($batch_id) {
+        global $wpdb;
+
+        $result = $wpdb->update(
+            $this->batch_queue_table,
+            ['error_message' => null],
+            ['id' => $batch_id],
+            ['%s'],
+            ['%d']
+        );
+
+        if ($result === false) {
+            $this->logger->error('Failed to clear batch error', [
+                'batch_id' => $batch_id
+            ]);
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
      * Build sync configuration (replaces hardcoded config)
      *
      * @return array Sync configuration

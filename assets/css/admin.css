@@ -723,4 +723,124 @@
     0% { transform: rotate(0deg); }
     100% { transform: rotate(360deg); }
 }
+
+/* Group Operations Styles */
+.bulkactions {
+    margin-right: 15px;
+}
+
+.bulkactions select {
+    margin-right: 5px;
+}
+
+.check-column {
+    width: 30px;
+    padding: 8px 3px 8px 10px;
+}
+
+.batch-checkbox {
+    margin: 0;
+}
+
+/* Group Progress Modal */
+.group-progress-content {
+    padding: 20px;
+}
+
+.progress-info {
+    margin-bottom: 20px;
+}
+
+.progress-info p {
+    margin: 5px 0;
+    font-size: 14px;
+}
+
+.progress-bar-container {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    margin-bottom: 20px;
+}
+
+.progress-bar-container .progress-bar {
+    flex: 1;
+    height: 20px;
+    background: #e5e5e5;
+    border-radius: 10px;
+    overflow: hidden;
+}
+
+.progress-bar-container .progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #0073aa, #00a0d2);
+    border-radius: 10px;
+    transition: width 0.3s ease;
+}
+
+.progress-bar-container .progress-percentage {
+    font-weight: 600;
+    color: #0073aa;
+    min-width: 50px;
+    text-align: right;
+}
+
+.progress-log {
+    background: #f9f9f9;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    padding: 10px;
+    margin-top: 15px;
+}
+
+.progress-log-entry {
+    margin: 2px 0;
+    padding: 2px 0;
+    border-bottom: 1px solid #eee;
+}
+
+.progress-log-entry:last-child {
+    border-bottom: none;
+}
+
+.progress-log-entry.success {
+    color: #46b450;
+}
+
+.progress-log-entry.error {
+    color: #dc3232;
+}
+
+.progress-log-entry.warning {
+    color: #ffb900;
+}
+
+.progress-log-entry.info {
+    color: #0073aa;
+}
+
+.modal-footer {
+    padding: 15px 20px;
+    border-top: 1px solid #ddd;
+    text-align: right;
+    background: #f9f9f9;
+    border-radius: 0 0 4px 4px;
+}
+
+/* Selection buttons styling */
+.button.select-all {
+    margin-right: 5px;
+}
+
+.button.clear-selection {
+    background: #f0f0f1;
+    border-color: #b4b9be;
+    color: #50575e;
+}
+
+.button.clear-selection:hover {
+    background: #e5e5e5;
+    border-color: #8c8f94;
+    color: #32373c;
+}
 }

@@ -426,13 +426,13 @@ function shopcommerce_get_order_external_provider_stats($order) {
 }
 
 /**
- * Log order completion with external provider products
+ * Sends a request to create an external order from a local WooCommerce order
  *
  * @param int|WC_Order $order Order ID or order object
  * @param ShopCommerce_Logger|null $logger Logger instance (optional)
  * @return bool True if logging was successful
  */
-function shopcommerce_log_order_external_products($order, $logger = null) {
+function shopcommerce_create_external_order_from_local_order($order, $logger = null) {
     // Get order object if ID was passed
     if (is_numeric($order)) {
         $order = wc_get_order($order);
@@ -454,85 +454,15 @@ function shopcommerce_log_order_external_products($order, $logger = null) {
         $logger = isset($GLOBALS['shopcommerce_logger']) ? $GLOBALS['shopcommerce_logger'] : null;
     }
 
-    // Prepare log message
-    $log_message = sprintf(
-        'Order %d completed with %d external provider product(s)',
-        $order->get_id(),
-        count($external_products)
-    );
-
-    // Prepare log context
-    $log_context = [
-        'order_id' => $order->get_id(),
-        'order_number' => $order->get_order_number(),
-        'order_total' => $order->get_total(),
-        'order_status' => $order->get_status(),
-        'customer_id' => $order->get_customer_id(),
-        'external_provider_products' => $external_products,
-    ];
-
-    // Collect comprehensive order data
-    $order_data = [
-        'order_id' => $order->get_id(),
-        'order_number' => $order->get_order_number(),
-        'order_total' => $order->get_total(),
-        'order_subtotal' => $order->get_subtotal(),
-        'order_discount_total' => $order->get_discount_total(),
-        'order_tax_total' => $order->get_total_tax(),
-        'order_shipping_total' => $order->get_shipping_total(),
-        'formatted_order_total' => wc_price($order->get_total()),
-        'order_status' => $order->get_status(),
-        'order_currency' => $order->get_currency(),
-        'payment_method' => $order->get_payment_method(),
-        'payment_method_title' => $order->get_payment_method_title(),
-        'transaction_id' => $order->get_transaction_id(),
-        'customer_ip_address' => $order->get_customer_ip_address(),
-        'customer_user_agent' => $order->get_customer_user_agent(),
-        'customer_note' => $order->get_customer_note(),
-        'date_created' => $order->get_date_created() ? $order->get_date_created()->format('Y-m-d H:i:s') : null,
-        'date_completed' => $order->get_date_completed() ? $order->get_date_completed()->format('Y-m-d H:i:s') : null,
-    ];
-
-    // Add shipping information
     $shipping_info = shopcommerce_get_order_shipping_info($order);
-    $order_data['shipping_info'] = $shipping_info;
-
-    // Add client information
-    $client_info = shopcommerce_get_order_client_info($order);
-    $order_data['client_info'] = $client_info;
-
-    // Add external provider products
-    $order_data['external_provider_products'] = $external_products;
-
-    // Calculate external provider products statistics
-    $external_stats = shopcommerce_get_order_external_provider_stats($order);
-    $order_data['external_provider_stats'] = $external_stats;
-
-    // Prepare comprehensive log message
-    $log_message = sprintf(
-        'Order %d completed with %d external provider product(s) from %d brand(s) - Total value: $%.2f',
-        $order->get_id(),
-        $external_stats['total_products'],
-        count($external_stats['brands']),
-        $external_stats['total_value']
-    );
-
-    // Prepare log context with complete data
-    $log_context = $order_data;
-
     // Log to logger if available
     if ($logger) {
-        $logger->info($log_message, $log_context);
-
         // Additional detailed activity logging
         $logger->log_activity(
             'order_completed_with_external_products_detailed',
             sprintf(
                 'Order %s completed with comprehensive data: %d external provider products from %d brand(s), total value $%.2f, shipped to %s, %s',
                 $order->get_order_number(),
-                $external_stats['total_products'],
-                count($external_stats['brands']),
-                $external_stats['total_value'],
                 !empty($shipping_info['shipping_address']) ?
                     ($shipping_info['shipping_address']['city'] . ', ' . $shipping_info['shipping_address']['state']) :
                     'no shipping address',
@@ -543,10 +473,6 @@ function shopcommerce_log_order_external_products($order, $logger = null) {
             [
                 'order_id' => $order->get_id(),
                 'order_number' => $order->get_order_number(),
-                'product_count' => $external_stats['total_products'],
-                'brands' => $external_stats['brands'],
-                'total_value' => $external_stats['total_value'],
-                'total_quantity' => $external_stats['total_quantity'],
                 'shipping_city' => $shipping_info['shipping_address']['city'] ?? null,
                 'shipping_state' => $shipping_info['shipping_address']['state'] ?? null,
                 'customer_name' => $client_info['billing_address']['first_name'] . ' ' . $client_info['billing_address']['last_name'] ?? 'Guest',
@@ -573,26 +499,117 @@ function shopcommerce_log_order_external_products($order, $logger = null) {
         return true;
     }
 
-    $requestBody = [
-        'listaPedido' => [
-            'AccountNum' => $shipping_info['shipping_address']['cc/nit'],
-            'NombreCLienteEntrega'=> $shipping_info['shipping_address']['first_name'] . ' ' . $shipping_info['shipping_address']['last_name'],
-            'TelefonoEntrega' => $shipping_info['shipping_address']['phone_number'],
-            'DireccionEntrega' => $shipping_info['shipping_address']['address_1'] . ' ' . $shipping_info['shipping_address']['address_2'],
-            'StateId' => $shipping_info['shipping_address']['state_id'],
-            'CountyId' => $shipping_info['shipping_address']['county_id'],
-            'RecogerEnSitio' => 0,
-            'EntregaUsuarioFinal' => 0,
-            "listaPedidoDetalle" => [
-                'PartNum' => '',
-                'Cantidad' => '',
-                'Marks' => '',
-                'Bodega' => '',
-            ]
-        ]
-    ];
+    try {
+        $listaPedidosDetalle = map_product_to_request_body($external_products);
+
+        $requestBody = [
+                'listaPedido' => [
+                        'AccountNum' => $shipping_info['shipping_address']['cc/nit'],
+                        'NombreCLienteEntrega'=> $shipping_info['shipping_address']['first_name'] . ' ' . $shipping_info['shipping_address']['last_name'],
+                        'TelefonoEntrega' => $shipping_info['shipping_address']['phone_number'],
+                        'DireccionEntrega' => $shipping_info['shipping_address']['address_1'] . ' ' . $shipping_info['shipping_address']['address_2'],
+                        'StateId' => $shipping_info['shipping_address']['state_id'],
+                        'CountyId' => $shipping_info['shipping_address']['county_id'],
+                        'RecogerEnSitio' => 0,
+                        'EntregaUsuarioFinal' => 0,
+                        "listaPedidoDetalle" => $listaPedidosDetalle
+                ]
+        ];
+
+        if ($logger) {
+            $logger->debug('Mapped product data for external order creation', [
+                'order_id' => $order->get_id(),
+                'order_number' => $order->get_order_number(),
+                'external_products_count' => count($external_products),
+                'request_body' => $requestBody,
+                'function' => 'shopcommerce_create_external_order_from_local_order'
+            ]);
+        }
+
+        $apiHandler = $GLOBALS['shopcommerce_api'];
+        if(!$apiHandler) {
+            if ($logger) {
+                $logger->error('API handler not available for external order creation', [
+                    'order_id' => $order->get_id(),
+                    'function' => 'shopcommerce_create_external_order_from_local_order'
+                ]);
+                $apiHandler = new ShopCommerce_API($logger);
+            }
+        }
+        $response = $apiHandler->realizarPedido($requestBody);
+
+        if(!$response['success']) {
+            if ($logger) {
+                $logger->error('Failed to create external order via API', [
+                    'order_id' => $order->get_id(),
+                    'order_number' => $order->get_order_number(),
+                    'response' => $response,
+                    'function' => 'shopcommerce_create_external_order_from_local_order'
+                ]);
+            }
+            return false;
+        } else {
+            if ($logger) {
+                $logger->info('Successfully created external order via API', [
+                    'order_id' => $order->get_id(),
+                    'order_number' => $order->get_order_number(),
+                    'external_order_id' => $response['data']['OrderId'] ?? null,
+                    'response' => $response,
+                    'function' => 'shopcommerce_create_external_order_from_local_order'
+                ]);
+            }
+        }
+
+    }catch (Exception $e) {
+        if ($logger) {
+            $logger->error('Error mapping product data for external order creation', [
+                'order_id' => $order->get_id(),
+                'error_message' => $e->getMessage(),
+                'function' => 'shopcommerce_create_external_order_from_local_order',
+                '$product_data' => $external_products
+            ]);
+        }
+        return false;
+    }
 
     return true;
+}
+
+/**
+ *  Map product data to request body format for the RealizarPedido API call
+ * @param array $product Product data array
+ * @return array Mapped product data for request body
+ * @throws Exception if the product data is invalid, like when there is no stock in any bodega
+ */
+function map_product_to_request_body($product) {
+    if(empty($product)) {
+        return [];
+    }
+
+    $bodegas = $product['lista_productos_bodega'];
+
+    if(empty($bodegas) || !is_array($bodegas)) {
+        throw new Exception('No bodegas data available for product ' . $product['part_num']);
+    }
+
+    //Map bodegas until getting the first one with quantity > 0
+    $seletedBodega = null;
+    foreach($bodegas as $bodega) {
+        if(isset($bodega['Cantidad'] ) && $bodega['Cantidad'] > 0) {
+            $seletedBodega = $bodega;
+            break;
+        }
+    }
+
+    if($seletedBodega === null) {
+        throw new Exception('No stock available in any bodega for product ' . $product['part_num']);
+    }
+    return [
+        'PartNum' => $product['part_num'],
+        'Cantidad' => $product['quantity'],
+        'Marks' => $product['marks'],
+        'Bodega' => $seletedBodega['Bodega'],
+    ];
 }
 
 /**
@@ -688,7 +705,7 @@ function shopcommerce_handle_order_completion($order_id) {
     }
 
     // Log external provider products
-    shopcommerce_log_order_external_products($order, $logger);
+    shopcommerce_create_external_order_from_local_order($order, $logger);
 }
 
 /**
@@ -1362,104 +1379,6 @@ function shopcommerce_custom_shipping_fields_css() {
     <?php
 }
 add_action('wp_head', 'shopcommerce_custom_shipping_fields_css');
-
-/**
- * Test function to manually trigger order processing
- * This is useful for testing the implementation
- *
- * @param int $order_id Order ID to test
- * @return array Test results
- */
-function shopcommerce_test_order_processing($order_id) {
-    // Get logger if available
-    $logger = isset($GLOBALS['shopcommerce_logger']) ? $GLOBALS['shopcommerce_logger'] : null;
-
-    $results = [
-        'success' => false,
-        'order_id' => $order_id,
-        'has_external_products' => false,
-        'external_products' => [],
-        'stats' => [],
-        'metadata' => [],
-        'logs' => [],
-    ];
-
-    if ($logger) {
-        $logger->info('Starting order processing test', [
-            'order_id' => $order_id,
-            'function' => 'shopcommerce_test_order_processing'
-        ]);
-    }
-
-    $order = wc_get_order($order_id);
-    if (!$order) {
-        $results['error'] = 'Order not found';
-        if ($logger) {
-            $logger->error('Order processing test failed - order not found', [
-                'order_id' => $order_id
-            ]);
-        }
-        return $results;
-    }
-
-    // Test external product detection
-    $external_products = shopcommerce_get_external_provider_products_from_order($order);
-    $results['has_external_products'] = !empty($external_products);
-    $results['external_products'] = $external_products;
-
-    if ($results['has_external_products']) {
-        $stats = shopcommerce_get_order_external_provider_stats($order);
-        $results['stats'] = $stats;
-    }
-
-    // Test metadata functions
-    $results['metadata']['has_metadata'] = shopcommerce_order_has_shopcommerce_metadata($order);
-    $results['metadata']['shopcommerce_data'] = shopcommerce_get_order_shopcommerce_metadata($order);
-
-    // Test metadata update
-    if (!$results['metadata']['has_metadata'] && $results['has_external_products']) {
-        // Trigger metadata update
-        shopcommerce_handle_order_completion($order_id);
-
-        // Check if metadata was added
-        $order = wc_get_order($order_id); // Refresh order object
-        $results['metadata']['updated_metadata'] = shopcommerce_get_order_shopcommerce_metadata($order);
-    }
-
-    // Test logging
-    $logger = isset($GLOBALS['shopcommerce_logger']) ? $GLOBALS['shopcommerce_logger'] : null;
-    if ($logger) {
-        $log_result = shopcommerce_log_order_external_products($order, $logger);
-        $results['logs'][] = [
-            'type' => 'logger',
-            'success' => $log_result,
-            'message' => $log_result ? 'Logged successfully' : 'Failed to log'
-        ];
-    }
-
-    // Test fallback logging
-    ob_start();
-    $fallback_result = shopcommerce_log_order_external_products($order, null);
-    ob_end_clean();
-    $results['logs'][] = [
-        'type' => 'fallback',
-        'success' => $fallback_result,
-        'message' => $fallback_result ? 'Fallback logged successfully' : 'Fallback failed'
-    ];
-
-    $results['success'] = true;
-
-    if ($logger) {
-        $logger->info('Order processing test completed successfully', [
-            'order_id' => $order_id,
-            'has_external_products' => $results['has_external_products'],
-            'external_product_count' => count($results['external_products']),
-            'has_metadata' => $results['metadata']['has_metadata']
-        ]);
-    }
-
-    return $results;
-}
 
 /**
  * Scheduled log clearing function

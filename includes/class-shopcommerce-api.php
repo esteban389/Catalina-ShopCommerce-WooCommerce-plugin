@@ -23,6 +23,7 @@ class ShopCommerce_API {
     const CATALOG_ENDPOINT = 'api/Webapi/VerCatalogo';
     const BRANDS_ENDPOINT = 'api/Webapi/VerMarcas';
     const CATEGORIES_ENDPOINT = 'api/Webapi/Ver_Categoria';
+    const REALIZAR_PEDIDO_ENDPOINT = 'api/Webapi/RealizarPedido';
 
     /**
      * API timeout (14 minutes)
@@ -397,6 +398,72 @@ class ShopCommerce_API {
 
         return false;
     }
+
+    public function realizar_pedido($pedido_data)
+    {
+        $token = $this->get_token();
+        if (!$token) {
+            $this->logger->error('Cannot realizar pedido - no valid token');
+            return null;
+        }
+
+        $pedido_url = trailingslashit(self::BASE_URL) . self::REALIZAR_PEDIDO_ENDPOINT;
+
+        // Prepare headers
+        $headers = [
+            'Authorization' => 'Bearer ' . $token,
+            'Content-Type' => 'application/json',
+        ];
+        $request_args = [
+            'headers' => $headers,
+            'body' => json_encode($pedido_data),
+            'timeout' => self::TIMEOUT,
+        ];
+
+        $this->logger->debug('Realizando pedido', ['url' => $pedido_url, 'pedido_data' => $pedido_data]);
+
+        $response = wp_remote_post($pedido_url, $request_args);
+
+        if (is_wp_error($response)) {
+            $this->handle_api_error($response, 'realizar_pedido', ['pedido_data' => $pedido_data]);
+            return null;
+        }
+
+        $response_body = wp_remote_retrieve_body($response);
+        /*
+         * Example successful response:
+         * [
+         *     {
+         *         "valor": "1",
+         *         "mensaje": "Mensaje enviado satisfactoriamente. Su Pedido Virtual es: 00046209.",
+         *         "pedido": "00046209"
+         *    }
+         * ]
+         */
+        $response_data = json_decode($response_body, true);
+
+        $result = $response_data[0];
+        if (!is_array($result) || !isset($result['valor']) || $result['valor'] != '1') {
+            $this->logger->error('Invalid JSON response for realizar pedido', [
+                'response_preview' => substr($response_body, 0, 500)
+            ]);
+            return [
+                'success' => false,
+                'message' => $result['mensaje'] ?? 'Unknown error',
+                'response' => $response_body
+            ];
+        }
+        $this->logger->info('Pedido realizado successfully', [
+            'pedido' => $result['pedido'] ?? 'unknown'
+        ]);
+
+        return [
+            'success' => true,
+            'message' => $result['mensaje'] ?? 'Pedido realizado correctamente',
+            'pedido' => $result['pedido'] ?? null,
+        ];
+    }
+
 
     /**
      * Handle API errors

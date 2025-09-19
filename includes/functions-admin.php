@@ -453,6 +453,7 @@ function shopcommerce_register_ajax_handlers() {
     add_action('wp_ajax_shopcommerce_reset_failed_batches', 'shopcommerce_ajax_reset_failed_batches');
     add_action('wp_ajax_shopcommerce_cleanup_old_batches', 'shopcommerce_ajax_cleanup_old_batches');
     add_action('wp_ajax_shopcommerce_get_batch_details', 'shopcommerce_ajax_get_batch_details');
+add_action('wp_ajax_shopcommerce_bulk_batch_action', 'shopcommerce_ajax_bulk_batch_action');
 }
 add_action('admin_init', 'shopcommerce_register_ajax_handlers');
 
@@ -2891,3 +2892,140 @@ function shopcommerce_ajax_get_batch_details() {
         ]);
     }
 }
+
+/**
+ * AJAX handler for bulk batch actions
+ */
+function shopcommerce_ajax_bulk_batch_action() {
+    // Verify nonce
+    check_ajax_referer('shopcommerce_admin_nonce', 'nonce');
+
+    // Check permissions
+    if (!current_user_can('manage_options')) {
+        wp_send_json_error(['message' => 'Insufficient permissions']);
+    }
+
+    $bulk_action = isset($_POST['bulk_action']) ? sanitize_text_field($_POST['bulk_action']) : '';
+    $batch_id = isset($_POST['batch_id']) ? intval($_POST['batch_id']) : 0;
+
+    if (!$bulk_action || !in_array($bulk_action, ['execute', 'retry', 'delete'])) {
+        wp_send_json_error(['message' => 'Invalid bulk action']);
+    }
+
+    if (!$batch_id) {
+        wp_send_json_error(['message' => 'Invalid batch ID']);
+    }
+
+    // Get instances
+    $jobs_store = isset($GLOBALS['shopcommerce_jobs_store']) ? $GLOBALS['shopcommerce_jobs_store'] : null;
+    $batch_processor = isset($GLOBALS['shopcommerce_batch_processor']) ? $GLOBALS['shopcommerce_batch_processor'] : null;
+    $logger = isset($GLOBALS['shopcommerce_logger']) ? $GLOBALS['shopcommerce_logger'] : null;
+
+    if (!$jobs_store) {
+        wp_send_json_error(['message' => 'Jobs store not available']);
+    }
+
+    try {
+        $batch = $jobs_store->get_batch_by_id($batch_id);
+        if (!$batch) {
+            wp_send_json_error(['message' => 'Batch not found']);
+        }
+
+        // Validate action against batch status
+        if ($bulk_action === 'execute' && $batch->status !== 'pending') {
+            wp_send_json_error(['message' => 'Only pending batches can be executed']);
+        }
+
+        if ($bulk_action === 'retry' && $batch->status !== 'failed') {
+            wp_send_json_error(['message' => 'Only failed batches can be retried']);
+        }
+
+        if ($bulk_action === 'delete' && !in_array($batch->status, ['pending', 'failed'])) {
+            wp_send_json_error(['message' => 'Only pending or failed batches can be deleted']);
+        }
+
+        // Execute the action
+        switch ($bulk_action) {
+            case 'execute':
+                if (!$batch_processor) {
+                    wp_send_json_error(['message' => 'Batch processor not available']);
+                }
+                $result = $batch_processor->execute_batch($batch_id);
+                if ($result['success']) {
+                    wp_send_json_success(['message' => 'Batch executed successfully']);
+                } else {
+                    wp_send_json_error(['message' => $result['message']]);
+                }
+                break;
+
+            case 'retry':
+                // Reset batch status to pending
+                $jobs_store->update_batch_status($batch_id, 'pending');
+                $jobs_store->update_batch_attempts($batch_id, 0);
+                $jobs_store->clear_batch_error($batch_id);
+
+                if ($logger) {
+                    $logger->info('Batch reset for retry via bulk action', ['batch_id' => $batch_id]);
+                }
+
+                wp_send_json_success(['message' => 'Batch reset for retry']);
+                break;
+
+            case 'delete':
+                $result = $jobs_store->delete_batch($batch_id);
+                if ($result) {
+                    wp_send_json_success(['message' => 'Batch deleted successfully']);
+                } else {
+                    wp_send_json_error(['message' => 'Failed to delete batch']);
+                }
+                break;
+        }
+
+    } catch (Exception $e) {
+        if ($logger) {
+            $logger->error('Failed to execute bulk batch action', [
+                'bulk_action' => $bulk_action,
+                'batch_id' => $batch_id,
+                'error' => $e->getMessage()
+            ]);
+        }
+        wp_send_json_error([
+            'message' => 'Failed to execute bulk action: ' . $e->getMessage()
+        ]);
+    }
+}
+
+/**
+ * AJAX handler for creating an external order from a local order
+ */
+function shopcommerce_ajax_create_external_order() {
+    // Verify nonce
+    check_ajax_referer('shopcommerce_admin_nonce', 'nonce');
+
+    // Check permissions
+    if (!current_user_can('manage_options')) {
+        wp_send_json_error(['message' => 'Insufficient permissions']);
+    }
+
+    if(!isset($_POST['order_id'])) {
+        wp_send_json_error(['message' => 'Order ID is required']);
+    }
+
+    $order_id = intval($_POST['order_id']);
+
+    if(!$order_id) {
+        wp_send_json_error(['message' => 'Invalid order ID']);
+    }
+
+    $order = wc_get_order($order_id);
+    if(!$order) {
+        wp_send_json_error(['message' => 'Order not found']);
+    }
+
+    $result = shopcommerce_create_external_order_from_local_order($order);
+    if(!$result) {
+        wp_send_json_error(['message' => 'Failed to create external order']);
+    }
+}
+
+add_action('wp_ajax_shopcommerce_create_external_order', 'shopcommerce_ajax_create_external_order');

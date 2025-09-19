@@ -29,7 +29,7 @@ class ShopCommerce_Batch_Processor {
     /**
      * Default batch size
      */
-    const DEFAULT_BATCH_SIZE = 25;
+    const DEFAULT_BATCH_SIZE = 500;
 
     /**
      * Maximum execution time per batch (seconds)

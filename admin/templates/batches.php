@@ -121,22 +121,72 @@ $status_options = [
     </div>
 
     <!-- Batches Table -->
-    <table class="wp-list-table widefat fixed striped">
-        <thead>
-            <tr>
-                <th scope="col" class="manage-column column-id">ID</th>
-                <th scope="col" class="manage-column column-brand">Brand</th>
-                <th scope="col" class="manage-column column-status">Status</th>
-                <th scope="col" class="manage-column column-progress">Progress</th>
-                <th scope="col" class="manage-column column-created">Created</th>
-                <th scope="col" class="manage-column column-attempts">Attempts</th>
-                <th scope="col" class="manage-column column-actions">Actions</th>
-            </tr>
-        </thead>
+    <form id="batches-form" method="post">
+        <div class="tablenav top">
+            <div class="alignleft actions bulkactions">
+                <select name="bulk_action" id="bulk-action-selector-top">
+                    <option value="">Bulk Actions</option>
+                    <option value="execute">Execute Selected</option>
+                    <option value="retry">Retry Selected (Failed)</option>
+                    <option value="delete">Delete Selected</option>
+                </select>
+                <input type="submit" id="do-bulk-action" class="button action" value="Apply">
+            </div>
+            <div class="alignleft actions">
+                <button type="button" class="button" id="select-all-pending">Select All Pending</button>
+                <button type="button" class="button" id="select-all-failed">Select All Failed</button>
+                <button type="button" class="button" id="clear-selection">Clear Selection</button>
+            </div>
+            <div class="tablenav-pages">
+                <span class="displaying-num">
+                    <?php echo sprintf(
+                        _n(
+                            '%s batch',
+                            '%s batches',
+                            $total_batches,
+                            'shopcommerce-sync'
+                        ),
+                        number_format($total_batches)
+                    ); ?>
+                </span>
+                <span class="pagination-links">
+                    <button type="button" class="button page-numbers" id="prev-page-top" <?php echo $page <= 1 ? 'disabled' : ''; ?>>
+                        &laquo;
+                    </button>
+                    <span class="paging-input">
+                        <label for="current-page-top" class="screen-reader-text">Current Page</label>
+                        <input type="text" id="current-page-top" class="current-page" value="<?php echo $page; ?>" size="1" min="1" max="<?php echo $total_pages; ?>">
+                        of <span class="total-pages"><?php echo $total_pages; ?></span>
+                    </span>
+                    <button type="button" class="button page-numbers" id="next-page-top" <?php echo $page >= $total_pages ? 'disabled' : ''; ?>>
+                        &raquo;
+                    </button>
+                </span>
+            </div>
+        </div>
+
+        <table class="wp-list-table widefat fixed striped">
+            <thead>
+                <tr>
+                    <td class="manage-column column-cb check-column">
+                        <input type="checkbox" id="cb-select-all-1">
+                    </td>
+                    <th scope="col" class="manage-column column-id">ID</th>
+                    <th scope="col" class="manage-column column-brand">Brand</th>
+                    <th scope="col" class="manage-column column-status">Status</th>
+                    <th scope="col" class="manage-column column-progress">Progress</th>
+                    <th scope="col" class="manage-column column-created">Created</th>
+                    <th scope="col" class="manage-column column-attempts">Attempts</th>
+                    <th scope="col" class="manage-column column-actions">Actions</th>
+                </tr>
+            </thead>
         <tbody>
             <?php if (!empty($batches)): ?>
                 <?php foreach ($batches as $batch): ?>
                     <tr>
+                        <th scope="row" class="check-column">
+                            <input type="checkbox" name="batch_ids[]" value="<?php echo esc_attr($batch->id); ?>" class="batch-checkbox" data-status="<?php echo esc_attr($batch->status); ?>">
+                        </th>
                         <td><?php echo esc_html($batch->id); ?></td>
                         <td>
                             <strong><?php echo esc_html($batch->brand); ?></strong>
@@ -251,7 +301,46 @@ $status_options = [
                 </tr>
             <?php endif; ?>
         </tbody>
-    </table>
+        </table>
+
+        <div class="tablenav bottom">
+            <div class="alignleft actions bulkactions">
+                <select name="bulk_action2" id="bulk-action-selector-bottom">
+                    <option value="">Bulk Actions</option>
+                    <option value="execute">Execute Selected</option>
+                    <option value="retry">Retry Selected (Failed)</option>
+                    <option value="delete">Delete Selected</option>
+                </select>
+                <input type="submit" id="do-bulk-action2" class="button action" value="Apply">
+            </div>
+            <div class="tablenav-pages">
+                <span class="displaying-num">
+                    <?php echo sprintf(
+                        _n(
+                            '%s batch',
+                            '%s batches',
+                            $total_batches,
+                            'shopcommerce-sync'
+                        ),
+                        number_format($total_batches)
+                    ); ?>
+                </span>
+                <span class="pagination-links">
+                    <button type="button" class="button page-numbers" id="prev-page-bottom" <?php echo $page <= 1 ? 'disabled' : ''; ?>>
+                        &laquo;
+                    </button>
+                    <span class="paging-input">
+                        <label for="current-page-bottom" class="screen-reader-text">Current Page</label>
+                        <input type="text" id="current-page-bottom" class="current-page" value="<?php echo $page; ?>" size="1" min="1" max="<?php echo $total_pages; ?>">
+                        of <span class="total-pages"><?php echo $total_pages; ?></span>
+                    </span>
+                    <button type="button" class="button page-numbers" id="next-page-bottom" <?php echo $page >= $total_pages ? 'disabled' : ''; ?>>
+                        &raquo;
+                    </button>
+                </span>
+            </div>
+        </div>
+    </form>
 
     <!-- Batch Details Modal -->
     <div id="batch-details-modal" class="shopcommerce-modal" style="display: none;">
@@ -275,6 +364,36 @@ $status_options = [
             </div>
             <div class="modal-body">
                 <div id="error-details-content"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Group Operation Progress Modal -->
+    <div id="group-progress-modal" class="shopcommerce-modal" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Batch Group Operation</h3>
+                <button type="button" class="button-link modal-close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="group-progress-content">
+                    <div class="progress-info">
+                        <p><strong>Operation:</strong> <span id="group-operation-type"></span></p>
+                        <p><strong>Total Batches:</strong> <span id="group-total-batches">0</span></p>
+                        <p><strong>Processed:</strong> <span id="group-processed-count">0</span></p>
+                        <p><strong>Status:</strong> <span id="group-operation-status">Preparing...</span></p>
+                    </div>
+                    <div class="progress-bar-container">
+                        <div class="progress-bar">
+                            <div class="progress-fill" id="group-progress-fill" style="width: 0%"></div>
+                        </div>
+                        <div class="progress-percentage"><span id="group-progress-percentage">0</span>%</div>
+                    </div>
+                    <div class="progress-log" id="group-progress-log" style="max-height: 200px; overflow-y: auto; margin-top: 15px; font-family: monospace; font-size: 12px;"></div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="button modal-close" id="close-group-progress">Close</button>
             </div>
         </div>
     </div>

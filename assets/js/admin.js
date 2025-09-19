@@ -27,6 +27,9 @@
 
         // Initialize tooltips and help text
         initTooltips();
+
+        // Initialize bulk action buttons state
+        updateBulkActionButtons();
     }
 
     /**
@@ -176,6 +179,45 @@
         $(document).on('click', '.modal-close', function(e) {
             e.preventDefault();
             $(this).closest('.shopcommerce-modal').hide();
+        });
+
+        // Group operations
+        $(document).on('click', '#cb-select-all-1, #cb-select-all-2', function(e) {
+            toggleSelectAllBatches(this);
+        });
+
+        $(document).on('click', '#select-all-pending', function(e) {
+            e.preventDefault();
+            selectBatchesByStatus('pending');
+        });
+
+        $(document).on('click', '#select-all-failed', function(e) {
+            e.preventDefault();
+            selectBatchesByStatus('failed');
+        });
+
+        $(document).on('click', '#clear-selection', function(e) {
+            e.preventDefault();
+            clearBatchSelection();
+        });
+
+        $(document).on('submit', '#batches-form', function(e) {
+            e.preventDefault();
+            handleBulkAction();
+        });
+
+        $(document).on('click', '#close-group-progress', function(e) {
+            e.preventDefault();
+            $('#group-progress-modal').hide();
+        });
+
+        // Update bulk action buttons when checkboxes change
+        $(document).on('change', '.batch-checkbox', function(e) {
+            updateBulkActionButtons();
+            // Update "select all" checkbox state
+            var totalCheckboxes = $('.batch-checkbox').length;
+            var checkedCheckboxes = $('.batch-checkbox:checked').length;
+            $('#cb-select-all-1, #cb-select-all-2').prop('checked', checkedCheckboxes === totalCheckboxes);
         });
     }
 
@@ -1195,6 +1237,7 @@
                         html += '<ul class="product-list">';
                         for (var i = 0; i < Math.min(batchData.length, 10); i++) {
                             var product = batchData[i];
+                            console.log(product);
                             html += '<li>';
                             html += '<strong>' + escapeHtml(product.nombre || product.name || 'Unknown') + '</strong>';
                             if (product.sku) {
@@ -1257,6 +1300,169 @@
             url.searchParams.set('paged', newPage);
             window.location.href = url.toString();
         }
+    }
+
+    /**
+     * Group Operations Functions
+     */
+
+    function toggleSelectAllBatches(checkbox) {
+        var isChecked = $(checkbox).prop('checked');
+        $('.batch-checkbox').prop('checked', isChecked);
+        updateBulkActionButtons();
+    }
+
+    function selectBatchesByStatus(status) {
+        $('.batch-checkbox').prop('checked', false);
+        $('.batch-checkbox[data-status="' + status + '"]').prop('checked', true);
+        updateBulkActionButtons();
+        showMessage('Selected all ' + status + ' batches', 'info');
+    }
+
+    function clearBatchSelection() {
+        $('.batch-checkbox').prop('checked', false);
+        $('#cb-select-all-1, #cb-select-all-2').prop('checked', false);
+        updateBulkActionButtons();
+        showMessage('Cleared batch selection', 'info');
+    }
+
+    function updateBulkActionButtons() {
+        var selectedCount = $('.batch-checkbox:checked').length;
+        var hasPending = $('.batch-checkbox[data-status="pending"]:checked').length > 0;
+        var hasFailed = $('.batch-checkbox[data-status="failed"]:checked').length > 0;
+
+        $('#bulk-action-selector-top, #bulk-action-selector-bottom').find('option').each(function() {
+            var value = $(this).val();
+            var disabled = true;
+
+            if (value === 'execute' && hasPending) disabled = false;
+            if (value === 'retry' && hasFailed) disabled = false;
+            if (value === 'delete' && (hasPending || hasFailed)) disabled = false;
+            if (value === '') disabled = false;
+
+            $(this).prop('disabled', disabled);
+        });
+
+        $('#do-bulk-action, #do-bulk-action2').prop('disabled', selectedCount === 0);
+    }
+
+    function handleBulkAction() {
+        var selectedBatches = $('.batch-checkbox:checked').map(function() {
+            return $(this).val();
+        }).get();
+
+        if (selectedBatches.length === 0) {
+            showMessage('Please select at least one batch', 'error');
+            return;
+        }
+
+        var action = $('#bulk-action-selector-top').val() || $('#bulk-action-selector-bottom').val();
+        if (!action) {
+            showMessage('Please select a bulk action', 'error');
+            return;
+        }
+
+        var actionName = action.charAt(0).toUpperCase() + action.slice(1);
+        showGroupProgressModal(actionName, selectedBatches.length);
+        executeBulkAction(action, selectedBatches);
+    }
+
+    function showGroupProgressModal(action, totalCount) {
+        $('#group-operation-type').text(action + ' Batches');
+        $('#group-total-batches').text(totalCount);
+        $('#group-processed-count').text('0');
+        $('#group-operation-status').text('Preparing...');
+        $('#group-progress-fill').css('width', '0%');
+        $('#group-progress-percentage').text('0');
+        $('#group-progress-log').empty();
+        $('#group-progress-modal').show();
+    }
+
+    function executeBulkAction(action, batchIds) {
+        var currentIndex = 0;
+        var successCount = 0;
+        var errorCount = 0;
+
+        $('#group-operation-status').text('Processing batches...');
+
+        function processNextBatch() {
+            if (currentIndex >= batchIds.length) {
+                completeGroupOperation(action, successCount, errorCount);
+                return;
+            }
+
+            var batchId = batchIds[currentIndex];
+            var logEntry = $('<div class="progress-log-entry info">Processing batch ' + batchId + '...</div>');
+            $('#group-progress-log').append(logEntry);
+            scrollToBottom();
+
+            $.ajax({
+                url: shopcommerce_admin.ajax_url,
+                type: 'POST',
+                data: {
+                    action: 'shopcommerce_bulk_batch_action',
+                    nonce: shopcommerce_admin.nonce,
+                    bulk_action: action,
+                    batch_id: batchId
+                },
+                success: function(response) {
+                    if (response.success) {
+                        successCount++;
+                        logEntry.removeClass('info').addClass('success').text('✓ Batch ' + batchId + ' processed successfully');
+
+                        // Remove from DOM or update status
+                        $('.batch-checkbox[value="' + batchId + '"]').closest('tr').fadeOut('slow', function() {
+                            $(this).remove();
+                        });
+                    } else {
+                        errorCount++;
+                        logEntry.removeClass('info').addClass('error').text('✗ Batch ' + batchId + ' failed: ' + response.data.message);
+                    }
+                },
+                error: function(xhr, status, error) {
+                    errorCount++;
+                    logEntry.removeClass('info').addClass('error').text('✗ Batch ' + batchId + ' failed: ' + error);
+                },
+                complete: function() {
+                    currentIndex++;
+                    updateGroupProgress(currentIndex, batchIds.length);
+                    setTimeout(processNextBatch, 500); // Small delay between batches
+                }
+            });
+        }
+
+        processNextBatch();
+    }
+
+    function updateGroupProgress(processed, total) {
+        var percentage = Math.round((processed / total) * 100);
+        $('#group-processed-count').text(processed);
+        $('#group-progress-fill').css('width', percentage + '%');
+        $('#group-progress-percentage').text(percentage);
+    }
+
+    function completeGroupOperation(action, successCount, errorCount) {
+        $('#group-operation-status').text('Operation completed');
+        var statusEntry = $('<div class="progress-log-entry info">Operation completed: ' + successCount + ' successful, ' + errorCount + ' failed</div>');
+        $('#group-progress-log').append(statusEntry);
+        scrollToBottom();
+
+        setTimeout(function() {
+            if (errorCount === 0) {
+                showMessage('All batches processed successfully', 'success');
+            } else {
+                showMessage('Group operation completed with ' + errorCount + ' errors', 'warning');
+            }
+            // Reload page after a short delay
+            setTimeout(function() {
+                window.location.reload();
+            }, 2000);
+        }, 1000);
+    }
+
+    function scrollToBottom() {
+        var logContainer = $('#group-progress-log');
+        logContainer.scrollTop(logContainer[0].scrollHeight);
     }
 
     /**
