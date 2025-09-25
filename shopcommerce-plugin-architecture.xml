@@ -769,8 +769,12 @@
                         <logic>
                             - For each product in batch, check if it exists in WooCommerce
                             - Search for existing product by SKU using get_product_by_sku()
+                            - Calculate final price using calculate_product_price() function:
+                              * Pass original price and product category to the function
+                              * Function applies markup based on category (currently 15% for all categories)
+                              * Return calculated price for database storage
                             - If product exists:
-                              * Update product name, description, price, stock
+                              * Update product name, description, calculated price, stock
                               * Update product images if needed
                               * Update product metadata
                               * Log product update
@@ -779,18 +783,21 @@
                               * Set product type (simple, variable, etc.)
                               * Set product attributes and metadata
                               * Set product images
-                              * Set stock status and price
+                              * Set stock status and calculated price
                               * Log product creation
                         </logic>
                         <code_reference>
                             public function create_or_update_product($product_data) {
                                 $existing_product = $this->get_product_by_sku($product_data['sku']);
 
+                                // Calculate final price with markup
+                                $final_price = $this->calculate_product_price($product_data['price'], $product_data['category']);
+
                                 if ($existing_product) {
                                     // Update existing product
                                     $existing_product->set_name($product_data['name']);
                                     $existing_product->set_description($product_data['description']);
-                                    $existing_product->set_price($product_data['price']);
+                                    $existing_product->set_price($final_price);
                                     $existing_product->set_stock_quantity($product_data['stock']);
                                     $existing_product->save();
                                 } else {
@@ -799,10 +806,48 @@
                                     $product->set_sku($product_data['sku']);
                                     $product->set_name($product_data['name']);
                                     $product->set_description($product_data['description']);
-                                    $product->set_price($product_data['price']);
+                                    $product->set_price($final_price);
                                     $product->set_stock_quantity($product_data['stock']);
                                     $product->save();
                                 }
+                            }
+                        </code_reference>
+                    </implementation>
+                </step>
+                <step>
+                    <name>Calculate product price with markup</name>
+                    <implementation>
+                        <file>includes/class-shopcommerce-product.php</file>
+                        <lines>400-450</lines>
+                        <logic>
+                            - New method calculate_product_price($original_price, $category)
+                            - Receives original price from API and product category code
+                            - Applies markup percentage based on category (currently 15% for all)
+                            - Calculates final price: original_price * (1 + markup_percentage)
+                            - Returns final price rounded to 2 decimal places
+                            - Logs price calculation for audit trail
+                            - Designed to be extensible for different markup rates per category
+                        </logic>
+                        <code_reference>
+                            private function calculate_product_price($original_price, $category) {
+                                // Default markup percentage (15%)
+                                $markup_percentage = 0.15;
+
+                                // Apply category-specific markup (extensible for future)
+                                // Currently applies 15% to all categories
+                                $final_price = $original_price * (1 + $markup_percentage);
+
+                                // Round to 2 decimal places
+                                $final_price = round($final_price, 2);
+
+                                $this->logger->debug('Price calculated', [
+                                    'original_price' => $original_price,
+                                    'category' => $category,
+                                    'markup_percentage' => $markup_percentage,
+                                    'final_price' => $final_price
+                                ]);
+
+                                return $final_price;
                             }
                         </code_reference>
                     </implementation>

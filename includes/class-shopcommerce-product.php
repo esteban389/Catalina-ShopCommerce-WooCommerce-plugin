@@ -33,6 +33,46 @@ class ShopCommerce_Product {
     }
 
     /**
+     * Calculate product price with markup based on category
+     *
+     * @param float $original_price Original price from API
+     * @param string $category Product category
+     * @return float Calculated price with markup
+     */
+    private function calculate_product_price($original_price, $category) {
+        // Get markup percentage from database configuration
+        $markup_percentage = 0.15; // Default fallback
+
+        // Try to get the configured markup percentage from jobs store
+        if (isset($GLOBALS['shopcommerce_jobs_store']) && !empty($category)) {
+            try {
+                $markup_percentage = $GLOBALS['shopcommerce_jobs_store']->get_category_markup_percentage_by_name($category);
+                $markup_percentage = $markup_percentage / 100; // Convert from percentage to decimal
+            } catch (Exception $e) {
+                $this->logger->warning('Error getting markup percentage, using default', [
+                    'category' => $category,
+                    'error' => $e->getMessage()
+                ]);
+            }
+        }
+
+        // Apply category-specific markup
+        $final_price = $original_price * (1 + $markup_percentage);
+
+        // Round to 2 decimal places
+        $final_price = round($final_price, 2);
+
+        $this->logger->debug('Price calculated', [
+            'original_price' => $original_price,
+            'category' => $category,
+            'markup_percentage' => $markup_percentage,
+            'final_price' => $final_price
+        ]);
+
+        return $final_price;
+    }
+
+    /**
      * Process product data and create/update WooCommerce product
      *
      * @param array $product_data Product data from ShopCommerce API
@@ -416,10 +456,28 @@ class ShopCommerce_Product {
             }
         }
 
+        // Calculate price with markup
+        $category_name = !empty($product_data['CategoriaDescripcion']) ? $product_data['CategoriaDescripcion'] :
+                        (!empty($product_data['Categoria']) ? $product_data['Categoria'] : 'unknown');
+        $calculated_price = $this->calculate_product_price($product_data['precio'], $category_name);
+
+        // Get the actual markup percentage used
+        $actual_markup_percentage = 0.15; // Default fallback
+        if (isset($GLOBALS['shopcommerce_jobs_store']) && !empty($category_name)) {
+            try {
+                $actual_markup_percentage = $GLOBALS['shopcommerce_jobs_store']->get_category_markup_percentage_by_name($category_name);
+            } catch (Exception $e) {
+                $this->logger->warning('Error getting markup percentage for metadata, using default', [
+                    'category' => $category_name,
+                    'error' => $e->getMessage()
+                ]);
+            }
+        }
+
         $mapped_data = [
             'name' => $product_data['Name'],
             'description' => $description,
-            'regular_price' => $product_data['precio'],
+            'regular_price' => $calculated_price,
             'stock_quantity' => $product_data['Quantity'],
             'stock_status' => $product_data['Quantity'] > 0 ? 'instock' : 'outofstock',
             'status' => 'publish',
@@ -428,6 +486,8 @@ class ShopCommerce_Product {
                 '_external_provider_brand' => $brand,
                 '_external_provider_sync_date' => current_time('mysql'),
                 '_shopcommerce_sku' => $sku, // Store original SKU
+                '_shopcommerce_original_price' => $product_data['precio'], // Store original price
+                '_shopcommerce_markup_percentage' => $actual_markup_percentage, // Store actual markup percentage used
             ],
             'category_name' => null,
             'image_url' => null,

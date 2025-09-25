@@ -77,6 +77,7 @@ class ShopCommerce_Jobs_Store {
             code int(11) NOT NULL,
             description text,
             is_active tinyint(1) DEFAULT 1,
+            markup_percentage decimal(5,2) DEFAULT 15.00,
             created_at datetime DEFAULT CURRENT_TIMESTAMP,
             updated_at datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
             PRIMARY KEY  (id),
@@ -397,9 +398,10 @@ class ShopCommerce_Jobs_Store {
      * @param string $name Category name
      * @param int $code Category code
      * @param string $description Category description
+     * @param float $markup_percentage Markup percentage (default 15.00)
      * @return int|false Category ID or false on failure
      */
-    public function create_category($name, $code, $description = '') {
+    public function create_category($name, $code, $description = '', $markup_percentage = 15.00) {
         global $wpdb;
 
         // Check if category code already exists
@@ -426,12 +428,13 @@ class ShopCommerce_Jobs_Store {
                 'code' => $code,
                 'description' => $description,
                 'is_active' => $is_active,
+                'markup_percentage' => $markup_percentage,
             ]
         );
 
         if ($result) {
             $category_id = $wpdb->insert_id;
-            $this->logger->info('Created new category', ['category_id' => $category_id, 'name' => $name, 'code' => $code, 'is_active' => $is_active]);
+            $this->logger->info('Created new category', ['category_id' => $category_id, 'name' => $name, 'code' => $code, 'is_active' => $is_active, 'markup_percentage' => $markup_percentage]);
 
             // Clear cache
             $this->clear_cache();
@@ -596,6 +599,70 @@ class ShopCommerce_Jobs_Store {
         }
 
         return false;
+    }
+
+    /**
+     * Update category markup percentage
+     *
+     * @param int $category_id Category ID
+     * @param float $markup_percentage Markup percentage
+     * @return bool Success status
+     */
+    public function update_category_markup($category_id, $markup_percentage) {
+        global $wpdb;
+
+        $result = $wpdb->update(
+            $this->categories_table,
+            ['markup_percentage' => $markup_percentage],
+            ['id' => $category_id],
+            ['%f'],
+            ['%d']
+        );
+
+        if ($result) {
+            $this->logger->info('Updated category markup percentage', ['category_id' => $category_id, 'markup_percentage' => $markup_percentage]);
+
+            // Clear cache
+            $this->clear_cache();
+
+            return true;
+        }
+
+        return false;
+    }
+
+    /**
+     * Get category markup percentage by category code
+     *
+     * @param int $category_code Category code
+     * @return float Markup percentage
+     */
+    public function get_category_markup_percentage($category_code) {
+        global $wpdb;
+
+        $markup = $wpdb->get_var($wpdb->prepare(
+            "SELECT markup_percentage FROM {$this->categories_table} WHERE code = %d AND is_active = 1",
+            $category_code
+        ));
+
+        return $markup !== null ? floatval($markup) : 15.00; // Default to 15% if not found
+    }
+
+    /**
+     * Get category markup percentage by category name
+     *
+     * @param string $category_name Category name
+     * @return float Markup percentage
+     */
+    public function get_category_markup_percentage_by_name($category_name) {
+        global $wpdb;
+
+        $markup = $wpdb->get_var($wpdb->prepare(
+            "SELECT markup_percentage FROM {$this->categories_table} WHERE name = %s AND is_active = 1",
+            $category_name
+        ));
+
+        return $markup !== null ? floatval($markup) : 15.00; // Default to 15% if not found
     }
 
     /**
@@ -834,11 +901,11 @@ class ShopCommerce_Jobs_Store {
 
         // Insert default categories
         $default_categories = [
-            ['Accesorios Y Perifericos', 1, 'Accessories and peripherals'],
-            ['Computadores', 7, 'Computers, laptops, workstations'],
-            ['Impresión', 12, 'Printing equipment'],
-            ['Video', 14, 'Video equipment and monitors'],
-            ['Servidores Y Almacenamiento', 18, 'Servers and storage'],
+            ['Accesorios Y Perifericos', 1, 'Accessories and peripherals', 15.00],
+            ['Computadores', 7, 'Computers, laptops, workstations', 15.00],
+            ['Impresión', 12, 'Printing equipment', 15.00],
+            ['Video', 14, 'Video equipment and monitors', 15.00],
+            ['Servidores Y Almacenamiento', 18, 'Servers and storage', 15.00],
         ];
 
         foreach ($default_categories as $category) {
@@ -848,6 +915,7 @@ class ShopCommerce_Jobs_Store {
                     'name' => $category[0],
                     'code' => $category[1],
                     'description' => $category[2],
+                    'markup_percentage' => $category[3],
                 ]
             );
         }

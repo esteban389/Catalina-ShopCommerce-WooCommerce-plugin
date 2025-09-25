@@ -67,6 +67,7 @@ class ShopCommerce_Config {
             code int(11) NOT NULL,
             description text,
             is_active tinyint(1) DEFAULT 1,
+            markup_percentage decimal(5,2) DEFAULT 15.00,
             created_at datetime DEFAULT CURRENT_TIMESTAMP,
             updated_at datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
             PRIMARY KEY  (id),
@@ -137,11 +138,11 @@ class ShopCommerce_Config {
         if ($category_count == 0) {
             // Insert default categories
             $default_categories = [
-                ['Accesorios Y Perifericos', 1, 'Accessories and peripherals'],
-                ['Computadores', 7, 'Computers, laptops, workstations'],
-                ['Impresión', 12, 'Printing equipment'],
-                ['Video', 14, 'Video equipment and monitors'],
-                ['Servidores Y Almacenamiento', 18, 'Servers and storage'],
+                ['Accesorios Y Perifericos', 1, 'Accessories and peripherals', 15.00],
+                ['Computadores', 7, 'Computers, laptops, workstations', 15.00],
+                ['Impresión', 12, 'Printing equipment', 15.00],
+                ['Video', 14, 'Video equipment and monitors', 15.00],
+                ['Servidores Y Almacenamiento', 18, 'Servers and storage', 15.00],
             ];
 
             foreach ($default_categories as $category) {
@@ -151,6 +152,7 @@ class ShopCommerce_Config {
                         'name' => $category[0],
                         'code' => $category[1],
                         'description' => $category[2],
+                        'markup_percentage' => $category[3],
                     ]
                 );
             }
@@ -364,9 +366,10 @@ class ShopCommerce_Config {
      * @param string $name Category name
      * @param int $code Category code
      * @param string $description Category description
+     * @param float $markup_percentage Markup percentage (default 15.00)
      * @return int|false Category ID or false on failure
      */
-    public function create_category($name, $code, $description = '') {
+    public function create_category($name, $code, $description = '', $markup_percentage = 15.00) {
         global $wpdb;
 
         // Check if category code already exists
@@ -393,6 +396,7 @@ class ShopCommerce_Config {
                 'code' => $code,
                 'description' => $description,
                 'is_active' => $is_active,
+                'markup_percentage' => $markup_percentage,
             ]
         );
 
