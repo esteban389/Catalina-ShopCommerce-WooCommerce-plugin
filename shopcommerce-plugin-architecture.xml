@@ -1,0 +1,1970 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<shopcommerce_plugin_architecture>
+    <!-- IMPORTANT: Architecture Update Requirement -->
+    <!-- ALL CHANGES to the plugin must first be reflected in this XML file -->
+    <!-- This includes: -->
+    <!-- - New classes or methods (add to <classes> section) -->
+    <!-- - Database schema changes (update <database_schema> section) -->
+    <!-- - New flows or modified flows (update <flows> section) -->
+    <!-- - Configuration changes (update <configuration> section) -->
+    <!-- - New dependencies (update <dependencies> section) -->
+    <!-- - File structure changes (update <file_structure> section) -->
+    <!-- -->
+    <!-- PROCESS: -->
+    <!-- 1. Update this XML file with proposed changes -->
+    <!-- 2. Present changes to user for confirmation -->
+    <!-- 3. Once confirmed, proceed with implementation -->
+    <!-- 4. Update XML file again to reflect final implementation -->
+    <!-- -->
+    <!-- This ensures the architecture documentation always matches the actual codebase -->
+    <!-- Plugin Overview -->
+    <plugin_info>
+        <name>ShopCommerce Product Sync Plugin</name>
+        <version>2.5.0</version>
+        <description>WordPress plugin for synchronizing products from external ShopCommerce API with WooCommerce</description>
+        <author>Hekalsoluciones</author>
+        <compatibility>
+            <wordpress_min>5.0+</wordpress_min>
+            <woocommerce_min>3.0+</woocommerce_min>
+            <php_min>7.2+</php_min>
+        </compatibility>
+    </plugin_info>
+
+    <!-- Core Architecture -->
+    <architecture>
+        <pattern>Modular with Dependency Injection</pattern>
+        <bootstrap>index.php</bootstrap>
+        <global_instances>true</global_instances>
+        <database_driven>true</database_driven>
+        <cron_scheduling>true</cron_scheduling>
+        <batch_processing>true</batch_processing>
+    </architecture>
+
+    <!-- Classes and Their Descriptions -->
+    <classes>
+        <class>
+            <name>ShopCommerce_Logger</name>
+            <file>includes/class-shopcommerce-logger.php</file>
+            <description>Centralized logging system with file-based and database logging, activity tracking, and automatic log clearing</description>
+            <global_variable>$GLOBALS['shopcommerce_logger']</global_variable>
+            <key_methods>
+                <method>log()</method>
+                <method>info()</method>
+                <method>error()</method>
+                <method>debug()</method>
+                <method>get_activity_log()</method>
+                <method>clear_logs()</method>
+            </key_methods>
+            <dependencies>None (initialized first)</dependencies>
+        </class>
+
+        <class>
+            <name>ShopCommerce_API</name>
+            <file>includes/class-shopcommerce-api.php</file>
+            <description>OAuth2 API client with authentication, token management, and product data retrieval from ShopCommerce API</description>
+            <global_variable>$GLOBALS['shopcommerce_api']</global_variable>
+            <key_methods>
+                <method>realizarPedido()</method>
+                <method>obtenerMarcas()</method>
+                <method>obtenerProductos()</method>
+                <method>get_token()</method>
+                <method>refresh_token()</method>
+                <method>is_token_valid()</method>
+            </key_methods>
+            <dependencies>ShopCommerce_Logger</dependencies>
+        </class>
+
+        <class>
+            <name>ShopCommerce_Helpers</name>
+            <file>includes/class-shopcommerce-helpers.php</file>
+            <description>Utility functions for WooCommerce operations, fallback job management, and product creation helpers</description>
+            <global_variable>$GLOBALS['shopcommerce_helpers']</global_variable>
+            <key_methods>
+                <method>build_jobs_list()</method>
+                <method>create_or_update_product()</method>
+                <method>get_product_by_sku()</method>
+                <method>sync_all_jobs()</method>
+                <method>get_sync_status()</method>
+            </key_methods>
+            <dependencies>ShopCommerce_Logger, ShopCommerce_API, ShopCommerce_Product</dependencies>
+        </class>
+
+        <class>
+            <name>ShopCommerce_Product</name>
+            <file>includes/class-shopcommerce-product.php</file>
+            <description>WooCommerce product creation, updates, and batch processing with metadata management</description>
+            <global_variable>$GLOBALS['shopcommerce_product']</global_variable>
+            <key_methods>
+                <method>create_or_update_product()</method>
+                <method>process_batch()</method>
+                <method>update_product_images()</method>
+                <method>update_product_metadata()</method>
+                <method>delete_product()</method>
+            </key_methods>
+            <dependencies>ShopCommerce_Logger</dependencies>
+        </class>
+
+        <class>
+            <name>ShopCommerce_Cron</name>
+            <file>includes/class-shopcommerce-cron.php</file>
+            <description>WordPress cron job scheduling and management with custom schedule intervals</description>
+            <global_variable>$GLOBALS['shopcommerce_cron']</global_variable>
+            <key_methods>
+                <method>schedule_sync()</method>
+                <method>unschedule_sync()</method>
+                <method>register_custom_schedules()</method>
+                <method>get_sync_status()</method>
+                <method>run_manual_sync()</method>
+            </key_methods>
+            <dependencies>ShopCommerce_Logger, ShopCommerce_Sync</dependencies>
+        </class>
+
+        <class>
+            <name>ShopCommerce_Sync</name>
+            <file>includes/class-shopcommerce-sync.php</file>
+            <description>Main sync coordination and business logic with job queue processing</description>
+            <global_variable>$GLOBALS['shopcommerce_sync']</global_variable>
+            <key_methods>
+                <method>run_full_sync()</method>
+                <method>run_sync_for_job()</method>
+                <method>test_connection()</method>
+                <method>get_sync_status()</method>
+                <method>get_sync_stats()</method>
+            </key_methods>
+            <dependencies>ShopCommerce_Logger, ShopCommerce_API, ShopCommerce_Jobs_Store, ShopCommerce_Product</dependencies>
+        </class>
+
+        <class>
+            <name>ShopCommerce_Config</name>
+            <file>includes/class-shopcommerce-config.php</file>
+            <description>Dynamic configuration management with database storage, API brand creation, and reset functionality</description>
+            <global_variable>$GLOBALS['shopcommerce_config']</global_variable>
+            <key_methods>
+                <method>get_setting()</method>
+                <method>update_setting()</method>
+                <method>build_jobs_list()</method>
+                <method>create_brand_from_api()</method>
+                <method>reset_configuration()</method>
+            </key_methods>
+            <dependencies>ShopCommerce_Logger, ShopCommerce_API</dependencies>
+        </class>
+
+        <class>
+            <name>ShopCommerce_Jobs_Store</name>
+            <file>includes/class-shopcommerce-jobs-store.php</file>
+            <description>Centralized management of brands, categories, and sync jobs with database tables and caching</description>
+            <global_variable>$GLOBALS['shopcommerce_jobs_store']</global_variable>
+            <key_methods>
+                <method>get_jobs()</method>
+                <method>add_batch()</method>
+                <method>get_pending_batches()</method>
+                <method>update_batch_status()</method>
+                <method>get_queue_stats()</method>
+                <method>clear_cache()</method>
+            </key_methods>
+            <dependencies>ShopCommerce_Logger</dependencies>
+        </class>
+
+        <class>
+            <name>ShopCommerce_Batch_Processor</name>
+            <file>includes/class-shopcommerce-batch-processor.php</file>
+            <description>Asynchronous batch processing with timeout handling, retry logic, and error recovery</description>
+            <global_variable>$GLOBALS['shopcommerce_batch_processor']</global_variable>
+            <key_methods>
+                <method>process_batch()</method>
+                <method>process_pending_batches()</method>
+                <method>get_brand_progress()</method>
+                <method>get_processing_stats()</method>
+                <method>cleanup_old_progress()</method>
+            </key_methods>
+            <dependencies>ShopCommerce_Logger, ShopCommerce_Jobs_Store, ShopCommerce_Product</dependencies>
+        </class>
+
+        <class>
+            <name>ShopCommerce_Cron_Debug</name>
+            <file>includes/class-shopcommerce-cron-debug.php</file>
+            <description>Debug utilities for cron system diagnostics and comprehensive testing</description>
+            <global_variable>None (utility class)</global_variable>
+            <key_methods>
+                <method>run_diagnostics()</method>
+                <method>check_wp_cron_enabled()</method>
+                <method>check_custom_schedules()</method>
+                <method>check_hook_registration()</method>
+                <method>check_current_cron_events()</method>
+            </key_methods>
+            <dependencies>None</dependencies>
+        </class>
+    </classes>
+
+    <!-- Database Schema -->
+    <database_schema>
+        <tables>
+            <table>
+                <name>wp_shopcommerce_brands</name>
+                <description>Stores brand configurations</description>
+                <fields>
+                    <field>id (INT, Primary Key)</field>
+                    <field>name (VARCHAR)</field>
+                    <field>slug (VARCHAR)</field>
+                    <field>description (TEXT)</field>
+                    <field>is_active (BOOLEAN)</field>
+                    <field>created_at (DATETIME)</field>
+                    <field>updated_at (DATETIME)</field>
+                </fields>
+            </table>
+            <table>
+                <name>wp_shopcommerce_categories</name>
+                <description>Stores category mappings</description>
+                <fields>
+                    <field>id (INT, Primary Key)</field>
+                    <field>name (VARCHAR)</field>
+                    <field>code (INT)</field>
+                    <field>description (TEXT)</field>
+                    <field>is_active (BOOLEAN)</field>
+                    <field>created_at (DATETIME)</field>
+                    <field>updated_at (DATETIME)</field>
+                </fields>
+            </table>
+            <table>
+                <name>wp_shopcommerce_brand_categories</name>
+                <description>Stores brand-category relationships</description>
+                <fields>
+                    <field>brand_id (INT, Foreign Key)</field>
+                    <field>category_id (INT, Foreign Key)</field>
+                    <field>created_at (DATETIME)</field>
+                </fields>
+            </table>
+            <table>
+                <name>wp_shopcommerce_batch_queue</name>
+                <description>Stores batch processing queue</description>
+                <fields>
+                    <field>id (INT, Primary Key)</field>
+                    <field>brand (VARCHAR)</field>
+                    <field>batch_index (INT)</field>
+                    <field>total_batches (INT)</field>
+                    <field>batch_data (LONGTEXT)</field>
+                    <field>categories (TEXT)</field>
+                    <field>status (VARCHAR)</field>
+                    <field>attempts (INT)</field>
+                    <field>max_attempts (INT)</field>
+                    <field>error_message (TEXT)</field>
+                    <field>created_at (DATETIME)</field>
+                    <field>updated_at (DATETIME)</field>
+                </fields>
+            </table>
+        </tables>
+    </database_schema>
+
+    <!-- Flow Analysis -->
+    <flows>
+        <!-- Plugin Initialization Flow -->
+        <flow>
+            <name>Plugin Initialization</name>
+            <type>initialization</type>
+            <trigger>WordPress plugin load</trigger>
+            <description>Initializes all core components and establishes global instances with dependency injection</description>
+            <steps>
+                <step>
+                    <name>Load index.php</name>
+                    <implementation>
+                        <file>index.php</file>
+                        <lines>1-50</lines>
+                        <logic>
+                            - Check if ABSPATH is defined to prevent direct access
+                            - Define plugin constants (SHOPCOMMERCE_SYNC_VERSION, SHOPCOMMERCE_SYNC_DIR, SHOPCOMMERCE_SYNC_URL)
+                            - Register activation hook: register_activation_hook(__FILE__, 'shopcommerce_sync_activate')
+                            - Register deactivation hook: register_deactivation_hook(__FILE__, 'shopcommerce_sync_deactivate')
+                            - Initialize plugin on 'plugins_loaded' hook
+                        </logic>
+                        <code_reference>
+                            define('SHOPCOMMERCE_SYNC_VERSION', '2.0.0');
+                            define('SHOPCOMMERCE_SYNC_DIR', plugin_dir_path(__FILE__));
+                            define('SHOPCOMMERCE_SYNC_URL', plugin_dir_url(__FILE__));
+                        </code_reference>
+                    </implementation>
+                </step>
+                <step>
+                    <name>Initialize ShopCommerce_Logger</name>
+                    <implementation>
+                        <file>index.php</file>
+                        <lines>87-91</lines>
+                        <logic>
+                            - Create new ShopCommerce_Logger instance
+                            - Store in global variable $GLOBALS['shopcommerce_logger']
+                            - Logger is initialized first to ensure all other components can log
+                            - Sets up file logging and database activity tracking
+                        </logic>
+                        <code_reference>
+                            $GLOBALS['shopcommerce_logger'] = new ShopCommerce_Logger();
+                        </code_reference>
+                    </implementation>
+                </step>
+                <step>
+                    <name>Initialize ShopCommerce_Jobs_Store</name>
+                    <implementation>
+                        <file>index.php</file>
+                        <lines>93-97</lines>
+                        <logic>
+                            - Create new ShopCommerce_Jobs_Store instance with logger dependency
+                            - Store in global variable $GLOBALS['shopcommerce_jobs_store']
+                            - Creates database tables if they don't exist
+                            - Initializes cache system with 5-minute TTL
+                        </logic>
+                        <code_reference>
+                            $GLOBALS['shopcommerce_jobs_store'] = new ShopCommerce_Jobs_Store($GLOBALS['shopcommerce_logger']);
+                        </code_reference>
+                    </implementation>
+                </step>
+                <step>
+                    <name>Initialize ShopCommerce_Config</name>
+                    <implementation>
+                        <file>index.php</file>
+                        <lines>99-103</lines>
+                        <logic>
+                            - Create new ShopCommerce_Config instance with logger dependency
+                            - Store in global variable $GLOBALS['shopcommerce_config']
+                            - Creates database tables if they don't exist
+                            - Initializes default configuration settings
+                        </logic>
+                        <code_reference>
+                            $GLOBALS['shopcommerce_config'] = new ShopCommerce_Config($GLOBALS['shopcommerce_logger']);
+                        </code_reference>
+                    </implementation>
+                </step>
+                <step>
+                    <name>Initialize ShopCommerce_API</name>
+                    <implementation>
+                        <file>index.php</file>
+                        <lines>105-109</lines>
+                        <logic>
+                            - Create new ShopCommerce_API instance with logger dependency
+                            - Store in global variable $GLOBALS['shopcommerce_api']
+                            - Sets up OAuth2 authentication parameters
+                            - Initializes token cache
+                        </logic>
+                        <code_reference>
+                            $GLOBALS['shopcommerce_api'] = new ShopCommerce_API($GLOBALS['shopcommerce_logger']);
+                        </code_reference>
+                    </implementation>
+                </step>
+                <step>
+                    <name>Initialize ShopCommerce_Product</name>
+                    <implementation>
+                        <file>index.php</file>
+                        <lines>111-115</lines>
+                        <logic>
+                            - Create new ShopCommerce_Product instance with logger dependency
+                            - Store in global variable $GLOBALS['shopcommerce_product']
+                            - Sets up WooCommerce product management
+                            - Initializes batch processing capabilities
+                        </logic>
+                        <code_reference>
+                            $GLOBALS['shopcommerce_product'] = new ShopCommerce_Product($GLOBALS['shopcommerce_logger']);
+                        </code_reference>
+                    </implementation>
+                </step>
+                <step>
+                    <name>Initialize ShopCommerce_Helpers</name>
+                    <implementation>
+                        <file>index.php</file>
+                        <lines>117-122</lines>
+                        <logic>
+                            - Create new ShopCommerce_Helpers instance with dependencies (logger, api, product)
+                            - Store in global variable $GLOBALS['shopcommerce_helpers']
+                            - Provides fallback job management
+                            - Sets up WooCommerce utility functions
+                        </logic>
+                        <code_reference>
+                            $GLOBALS['shopcommerce_helpers'] = new ShopCommerce_Helpers(
+                                $GLOBALS['shopcommerce_logger'],
+                                $GLOBALS['shopcommerce_api'],
+                                $GLOBALS['shopcommerce_product']
+                            );
+                        </code_reference>
+                    </implementation>
+                </step>
+                <step>
+                    <name>Initialize ShopCommerce_Sync</name>
+                    <implementation>
+                        <file>index.php</file>
+                        <lines>124-129</lines>
+                        <logic>
+                            - Create new ShopCommerce_Sync instance with dependencies
+                            - Store in global variable $GLOBALS['shopcommerce_sync']
+                            - Sets up main sync coordination logic
+                            - Initializes job queue processing
+                        </logic>
+                        <code_reference>
+                            $GLOBALS['shopcommerce_sync'] = new ShopCommerce_Sync(
+                                $GLOBALS['shopcommerce_logger'],
+                                $GLOBALS['shopcommerce_api'],
+                                $GLOBALS['shopcommerce_jobs_store'],
+                                $GLOBALS['shopcommerce_product']
+                            );
+                        </code_reference>
+                    </implementation>
+                </step>
+                <step>
+                    <name>Initialize ShopCommerce_Cron</name>
+                    <implementation>
+                        <file>index.php</file>
+                        <lines>131-135</lines>
+                        <logic>
+                            - Create new ShopCommerce_Cron instance with dependencies
+                            - Store in global variable $GLOBALS['shopcommerce_cron']
+                            - Registers custom cron schedules
+                            - Sets up automatic sync scheduling
+                        </logic>
+                        <code_reference>
+                            $GLOBALS['shopcommerce_cron'] = new ShopCommerce_Cron(
+                                $GLOBALS['shopcommerce_logger'],
+                                $GLOBALS['shopcommerce_sync']
+                            );
+                        </code_reference>
+                    </implementation>
+                </step>
+                <step>
+                    <name>Initialize ShopCommerce_Batch_Processor</name>
+                    <implementation>
+                        <file>index.php</file>
+                        <lines>137-142</lines>
+                        <logic>
+                            - Create new ShopCommerce_Batch_Processor instance with dependencies
+                            - Store in global variable $GLOBALS['shopcommerce_batch_processor']
+                            - Sets up asynchronous batch processing
+                            - Initializes retry logic and error recovery
+                        </logic>
+                        <code_reference>
+                            $GLOBALS['shopcommerce_batch_processor'] = new ShopCommerce_Batch_Processor(
+                                $GLOBALS['shopcommerce_logger'],
+                                $GLOBALS['shopcommerce_jobs_store'],
+                                $GLOBALS['shopcommerce_product']
+                            );
+                        </code_reference>
+                    </implementation>
+                </step>
+                <step>
+                    <name>Register WordPress hooks</name>
+                    <implementation>
+                        <file>index.php</file>
+                        <lines>144-156</lines>
+                        <logic>
+                            - Register 'shopcommerce_product_sync_hook' for cron jobs
+                            - Register 'init' hook for plugin initialization
+                            - Register admin menu hooks
+                            - Register AJAX endpoint hooks
+                            - Register WooCommerce order hooks
+                        </logic>
+                        <code_reference>
+                            add_action('shopcommerce_product_sync_hook', 'shopcommerce_run_sync_cron');
+                            add_action('init', 'shopcommerce_sync_init');
+                            add_action('admin_menu', 'shopcommerce_admin_menu');
+                            add_action('wp_ajax_shopcommerce_ajax', 'shopcommerce_ajax_handler');
+                        </code_reference>
+                    </implementation>
+                </step>
+                <step>
+                    <name>Register admin menus</name>
+                    <implementation>
+                        <file>includes/functions-admin.php</file>
+                        <lines>1-50</lines>
+                        <logic>
+                            - Add main menu page 'ShopCommerce Sync'
+                            - Add submenu pages: Dashboard, Products, Orders, Brands & Categories, Sync Control, Settings, Logs
+                            - Set up menu callbacks and capabilities
+                        </logic>
+                        <code_reference>
+                            add_menu_page('ShopCommerce Sync', 'ShopCommerce Sync', 'manage_options', 'shopcommerce-sync', 'shopcommerce_admin_dashboard');
+                        </code_reference>
+                    </implementation>
+                </step>
+                <step>
+                    <name>Register AJAX endpoints</name>
+                    <implementation>
+                        <file>includes/functions-admin.php</file>
+                        <lines>1000-1200</lines>
+                        <logic>
+                            - Register 'shopcommerce_ajax' handler
+                            - Route AJAX requests based on 'action' parameter
+                            - Handle operations: test_connection, manual_sync, rebuild_queue, update_settings, etc.
+                            - Return JSON responses with success/error status
+                        </logic>
+                        <code_reference>
+                            add_action('wp_ajax_shopcommerce_ajax', 'shopcommerce_ajax_handler');
+                        </code_reference>
+                    </implementation>
+                </step>
+            </steps>
+            <involved_classes>
+                <class>index.php</class>
+                <class>ShopCommerce_Logger</class>
+                <class>ShopCommerce_Jobs_Store</class>
+                <class>ShopCommerce_Config</class>
+                <class>ShopCommerce_API</class>
+                <class>ShopCommerce_Product</class>
+                <class>ShopCommerce_Helpers</class>
+                <class>ShopCommerce_Sync</class>
+                <class>ShopCommerce_Cron</class>
+                <class>ShopCommerce_Batch_Processor</class>
+            </involved_classes>
+        </flow>
+
+        <!-- Product Sync Flow -->
+        <flow>
+            <name>Product Synchronization</name>
+            <type>sync</type>
+            <trigger>Cron job or manual sync request</trigger>
+            <description>Retrieves product data from ShopCommerce API and synchronizes with WooCommerce through batch processing</description>
+            <steps>
+                <step>
+                    <name>Get sync jobs from Jobs Store</name>
+                    <implementation>
+                        <file>includes/class-shopcommerce-sync.php</file>
+                        <lines>58-72</lines>
+                        <logic>
+                            - Call ShopCommerce_Jobs_Store::get_jobs() to get configured sync jobs
+                            - Jobs contain brand information and category codes
+                            - Each job represents a brand to sync with specific categories
+                            - If no jobs found, log warning and return empty results
+                        </logic>
+                        <code_reference>
+                            $jobs = $this->jobs_store->get_jobs();
+                            if (empty($jobs)) {
+                                $this->logger->warning('No sync jobs found');
+                                return [];
+                            }
+                        </code_reference>
+                    </implementation>
+                </step>
+                <step>
+                    <name>For each job, get brand and category information</name>
+                    <implementation>
+                        <file>includes/class-shopcommerce-sync.php</file>
+                        <lines>74-90</lines>
+                        <logic>
+                            - Iterate through each job in the jobs array
+                            - Extract brand name from job
+                            - Get category codes for the brand
+                            - Handle special case: if categories array is empty or contains 'all', use all category codes [1,7,12,14,18]
+                            - Validate that brand and categories are properly configured
+                        </logic>
+                        <code_reference>
+                            foreach ($jobs as $job) {
+                                $brand = $job['brand'];
+                                $categories = isset($job['categories']) ? $job['categories'] : [];
+
+                                // Handle 'all' categories
+                                if (empty($categories) || in_array('all', $categories)) {
+                                    $categories = [1, 7, 12, 14, 18];
+                                }
+                            }
+                        </code_reference>
+                    </implementation>
+                </step>
+                <step>
+                    <name>Authenticate with ShopCommerce API</name>
+                    <implementation>
+                        <file>includes/class-shopcommerce-api.php</file>
+                        <lines>45-78</lines>
+                        <logic>
+                            - Check if access token exists and is valid
+                            - If token is expired or invalid, refresh it using refresh token
+                            - If refresh token is also invalid, perform full OAuth2 authentication
+                            - Store token in WordPress transient for caching (1 hour expiry)
+                            - Handle authentication errors and log them
+                        </logic>
+                        <code_reference>
+                            public function get_token() {
+                                $token = get_transient('shopcommerce_access_token');
+                                if ($token && $this->is_token_valid($token)) {
+                                    return $token;
+                                }
+
+                                return $this->refresh_token();
+                            }
+                        </code_reference>
+                    </implementation>
+                </step>
+                <step>
+                    <name>Send API request with brand and category headers</name>
+                    <implementation>
+                        <file>includes/class-shopcommerce-api.php</file>
+                        <lines>120-180</lines>
+                        <logic>
+                            - Build API request URL: /api/Webapi/VerCatalogo
+                            - Set required headers:
+                              * Authorization: Bearer {token}
+                              * X-MARKS: {brand_name}
+                              * X-CATEGORIA: {comma_separated_category_codes}
+                            - Configure cURL options:
+                              * Timeout: 840 seconds (14 minutes)
+                              * SSL verification disabled for localhost development
+                              * Return transfer as string
+                            - Execute HTTP request and handle response
+                        </logic>
+                        <code_reference>
+                            $headers = [
+                                'Authorization: Bearer ' . $this->get_token(),
+                                'X-MARKS: ' . $brand,
+                                'X-CATEGORIA: ' . implode(',', $categories)
+                            ];
+
+                            $ch = curl_init();
+                            curl_setopt($ch, CURLOPT_URL, $this->base_url . '/api/Webapi/VerCatalogo');
+                            curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
+                            curl_setopt($ch, CURLOPT_TIMEOUT, 840);
+                            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+                        </code_reference>
+                    </implementation>
+                </step>
+                <step>
+                    <name>Receive XML product data</name>
+                    <implementation>
+                        <file>includes/class-shopcommerce-api.php</file>
+                        <lines>180-220</lines>
+                        <logic>
+                            - Execute cURL request and capture response
+                            - Check for cURL errors and HTTP status codes
+                            - Validate XML response structure
+                            - Handle API errors (invalid XML, authentication failures, etc.)
+                            - Return XML string or throw exception on failure
+                        </logic>
+                        <code_reference>
+                            $response = curl_exec($ch);
+                            $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+
+                            if ($response === false) {
+                                throw new Exception('cURL error: ' . curl_error($ch));
+                            }
+
+                            if ($http_code !== 200) {
+                                throw new Exception("HTTP error: {$http_code}");
+                            }
+
+                            // Validate XML
+                            libxml_use_internal_errors(true);
+                            $xml = simplexml_load_string($response);
+                        </code_reference>
+                    </implementation>
+                </step>
+                <step>
+                    <name>Parse XML and extract product information</name>
+                    <implementation>
+                        <file>includes/class-shopcommerce-sync.php</file>
+                        <lines>92-130</lines>
+                        <logic>
+                            - Convert XML response to SimpleXMLElement object
+                            - Extract product nodes from XML structure
+                            - For each product, extract:
+                              * SKU (Código)
+                              * Name (Nombre)
+                              * Description (Descripción)
+                              * Price (Precio)
+                              * Stock (Stock)
+                              * Brand (Marca)
+                              * Category (Categoría)
+                              * Images (Imágenes)
+                            - Sanitize and validate product data
+                            - Build product array structure for batch processing
+                        </logic>
+                        <code_reference>
+                            $xml = simplexml_load_string($api_response);
+                            $products = [];
+
+                            foreach ($xml->Producto as $product_xml) {
+                                $product_data = [
+                                    'sku' => (string) $product_xml->Código,
+                                    'name' => (string) $product_xml->Nombre,
+                                    'description' => (string) $product_xml->Descripción,
+                                    'price' => (float) $product_xml->Precio,
+                                    'stock' => (int) $product_xml->Stock,
+                                    'brand' => (string) $product_xml->Marca,
+                                    'category' => (string) $product_xml->Categoría,
+                                    'images' => $this->extract_images($product_xml->Imágenes)
+                                ];
+                                $products[] = $product_data;
+                            }
+                        </code_reference>
+                    </implementation>
+                </step>
+                <step>
+                    <name>Create batch queue for processing</name>
+                    <implementation>
+                        <file>includes/class-shopcommerce-jobs-store.php</file>
+                        <lines>280-350</lines>
+                        <logic>
+                            - Calculate batch size (configurable, default 500 products)
+                            - Divide products into batches based on batch size
+                            - For each batch, create batch record in database:
+                              * brand: current brand being processed
+                              * batch_index: current batch number
+                              * total_batches: total number of batches for this brand
+                              * batch_data: JSON encoded product data
+                              * categories: JSON encoded category codes
+                              * status: 'pending'
+                              * attempts: 0
+                              * max_attempts: 3
+                            - Store batches in wp_shopcommerce_batch_queue table
+                            - Log batch creation activity
+                        </logic>
+                        <code_reference>
+                            $batch_size = 500;
+                            $total_batches = ceil(count($products) / $batch_size);
+
+                            for ($i = 0; $i < $total_batches; $i++) {
+                                $batch_data = array_slice($products, $i * $batch_size, $batch_size);
+
+                                $this->add_batch([
+                                    'brand' => $brand,
+                                    'batch_index' => $i + 1,
+                                    'total_batches' => $total_batches,
+                                    'batch_data' => json_encode($batch_data),
+                                    'categories' => json_encode($categories),
+                                    'status' => 'pending'
+                                ]);
+                            }
+                        </code_reference>
+                    </implementation>
+                </step>
+                <step>
+                    <name>Process batches asynchronously</name>
+                    <implementation>
+                        <file>includes/class-shopcommerce-batch-processor.php</file>
+                        <lines>58-161</lines>
+                        <logic>
+                            - Get pending batches from queue (status = 'pending' or 'failed')
+                            - For each batch, call process_batch() method
+                            - Set execution limits:
+                              * set_time_limit(60) - 60 seconds max per batch
+                              * ini_set('memory_limit', '256M') - increase memory limit
+                              * ignore_user_abort(true) - allow completion even if user disconnects
+                            - Update batch status to 'processing' and increment attempts
+                            - Decode batch data with error handling
+                            - Call product handler to process the batch
+                            - Update batch status to 'completed' or 'failed'
+                        </logic>
+                        <code_reference>
+                            public function process_batch($batch_id) {
+                                $this->set_execution_limits();
+
+                                $batch = $this->jobs_store->get_batch($batch_id);
+                                $this->jobs_store->update_batch_status($batch_id, 'processing');
+                                $this->jobs_store->increment_batch_attempts($batch_id);
+
+                                $batch_data = json_decode($batch->batch_data, true);
+                                $results = $this->process_batch_data($batch_data, $batch->brand, $categories);
+
+                                $this->jobs_store->update_batch_status($batch_id, 'completed');
+                                return $results;
+                            }
+                        </code_reference>
+                    </implementation>
+                </step>
+                <step>
+                    <name>Create or update WooCommerce products</name>
+                    <implementation>
+                        <file>includes/class-shopcommerce-product.php</file>
+                        <lines>58-150</lines>
+                        <logic>
+                            - For each product in batch, check if it exists in WooCommerce
+                            - Search for existing product by SKU using get_product_by_sku()
+                            - If product exists:
+                              * Update product name, description, price, stock
+                              * Update product images if needed
+                              * Update product metadata
+                              * Log product update
+                            - If product doesn't exist:
+                              * Create new WooCommerce product
+                              * Set product type (simple, variable, etc.)
+                              * Set product attributes and metadata
+                              * Set product images
+                              * Set stock status and price
+                              * Log product creation
+                        </logic>
+                        <code_reference>
+                            public function create_or_update_product($product_data) {
+                                $existing_product = $this->get_product_by_sku($product_data['sku']);
+
+                                if ($existing_product) {
+                                    // Update existing product
+                                    $existing_product->set_name($product_data['name']);
+                                    $existing_product->set_description($product_data['description']);
+                                    $existing_product->set_price($product_data['price']);
+                                    $existing_product->set_stock_quantity($product_data['stock']);
+                                    $existing_product->save();
+                                } else {
+                                    // Create new product
+                                    $product = new WC_Product();
+                                    $product->set_sku($product_data['sku']);
+                                    $product->set_name($product_data['name']);
+                                    $product->set_description($product_data['description']);
+                                    $product->set_price($product_data['price']);
+                                    $product->set_stock_quantity($product_data['stock']);
+                                    $product->save();
+                                }
+                            }
+                        </code_reference>
+                    </implementation>
+                </step>
+                <step>
+                    <name>Update product metadata and images</name>
+                    <implementation>
+                        <file>includes/class-shopcommerce-product.php</file>
+                        <lines>200-280</lines>
+                        <logic>
+                            - Update product metadata for ShopCommerce integration:
+                              * _shopcommerce_brand: brand name
+                              * _shopcommerce_category: category code
+                              * _shopcommerce_last_sync: timestamp of last sync
+                              * _shopcommerce_provider: 'ShopCommerce'
+                            - Handle product images:
+                              * Download images from remote URLs
+                              * Attach images to product gallery
+                              * Set featured image
+                              * Skip duplicate images to prevent unnecessary downloads
+                            - Update product categories and tags based on ShopCommerce data
+                        </logic>
+                        <code_reference>
+                            public function update_product_metadata($product_id, $product_data) {
+                                update_post_meta($product_id, '_shopcommerce_brand', $product_data['brand']);
+                                update_post_meta($product_id, '_shopcommerce_category', $product_data['category']);
+                                update_post_meta($product_id, '_shopcommerce_last_sync', current_time('mysql'));
+                                update_post_meta($product_id, '_shopcommerce_provider', 'ShopCommerce');
+
+                                $this->update_product_images($product_id, $product_data['images']);
+                            }
+                        </code_reference>
+                    </implementation>
+                </step>
+                <step>
+                    <name>Log sync activity</name>
+                    <implementation>
+                        <file>includes/class-shopcommerce-logger.php</file>
+                        <lines>45-120</lines>
+                        <logic>
+                            - Log successful sync operations with details:
+                              * Brand name and categories processed
+                              * Number of products found and processed
+                              * Number of products created, updated, or failed
+                              * Processing time and batch information
+                            - Log errors and warnings with stack traces
+                            - Store log entries in database (wp_shopcommerce_activity_log)
+                            - Write detailed logs to file (/logs/shopcommerce-sync.log)
+                            - Clean up old log entries to prevent database bloat
+                        </logic>
+                        <code_reference>
+                            $this->logger->info('Product sync completed', [
+                                'brand' => $brand,
+                                'categories' => $categories,
+                                'products_found' => count($products),
+                                'batches_created' => $total_batches,
+                                'processing_time' => $processing_time
+                            ]);
+                        </code_reference>
+                    </implementation>
+                </step>
+            </steps>
+            <involved_classes>
+                <class>ShopCommerce_Sync</class>
+                <class>ShopCommerce_Jobs_Store</class>
+                <class>ShopCommerce_API</class>
+                <class>ShopCommerce_Batch_Processor</class>
+                <class>ShopCommerce_Product</class>
+                <class>ShopCommerce_Logger</class>
+            </involved_classes>
+        </flow>
+
+        <!-- Batch Processing Flow -->
+        <flow>
+            <name>Batch Processing</name>
+            <type>batch</type>
+            <trigger>Batch queue processing</trigger>
+            <description>Processes product batches with timeout handling, retry logic, and error recovery mechanisms</description>
+            <steps>
+                <step>
+                    <name>Get pending batches from queue</name>
+                    <implementation>
+                        <file>includes/class-shopcommerce-batch-processor.php</file>
+                        <lines>298-311</lines>
+                        <logic>
+                            - Call ShopCommerce_Jobs_Store::get_pending_batches() with limit parameter
+                            - Query database for batches with status 'pending' or 'failed'
+                            - Order by creation time (oldest first)
+                            - Limit number of batches processed per execution (default 1)
+                            - If no pending batches found, return empty results
+                        </logic>
+                        <code_reference>
+                            $pending_batches = $this->jobs_store->get_pending_batches($limit);
+
+                            if (empty($pending_batches)) {
+                                $this->logger->info('No pending batches to process');
+                                return ['success' => true, 'processed' => 0, 'results' => []];
+                            }
+                        </code_reference>
+                    </implementation>
+                </step>
+                <step>
+                    <name>Set execution limits (60 seconds timeout)</name>
+                    <implementation>
+                        <file>includes/class-shopcommerce-batch-processor.php</file>
+                        <lines>183-196</lines>
+                        <logic>
+                            - Set PHP execution time limit to 60 seconds using set_time_limit(60)
+                            - Increase memory limit to 256M using ini_set('memory_limit', '256M')
+                            - Enable ignore_user_abort(true) to allow completion even if user disconnects
+                            - These limits prevent timeouts during large batch processing
+                        </logic>
+                        <code_reference>
+                            private function set_execution_limits() {
+                                if (function_exists('set_time_limit')) {
+                                    @set_time_limit(self::MAX_EXECUTION_TIME); // 60 seconds
+                                }
+
+                                if (function_exists('ini_set')) {
+                                    @ini_set('memory_limit', '256M');
+                                }
+
+                                @ignore_user_abort(true);
+                            }
+                        </code_reference>
+                    </implementation>
+                </step>
+                <step>
+                    <name>Update batch status to processing</name>
+                    <implementation>
+                        <file>includes/class-shopcommerce-batch-processor.php</file>
+                        <lines>76-78</lines>
+                        <logic>
+                            - Call ShopCommerce_Jobs_Store::update_batch_status($batch_id, 'processing')
+                            - Update batch record in database to indicate processing has started
+                            - This prevents other processes from picking up the same batch
+                            - Log status change for debugging purposes
+                        </logic>
+                        <code_reference>
+                            $this->jobs_store->update_batch_status($batch_id, 'processing');
+                            $this->jobs_store->increment_batch_attempts($batch_id);
+                        </code_reference>
+                    </implementation>
+                </step>
+                <step>
+                    <name>Decode batch data</name>
+                    <implementation>
+                        <file>includes/class-shopcommerce-batch-processor.php</file>
+                        <lines>80-90</lines>
+                        <logic>
+                            - Retrieve batch record from database using get_batch($batch_id)
+                            - Decode JSON-encoded batch_data field
+                            - Decode JSON-encoded categories field
+                            - Validate JSON decoding using json_last_error()
+                            - Throw exception if JSON is invalid or data structure is wrong
+                        </logic>
+                        <code_reference>
+                            $batch_data = json_decode($batch->batch_data, true);
+                            $categories = json_decode($batch->categories, true);
+
+                            if (json_last_error() !== JSON_ERROR_NONE) {
+                                throw new Exception("JSON decode error for batch {$batch_id}: " . json_last_error_msg());
+                            }
+
+                            if (!is_array($batch_data)) {
+                                throw new Exception("Invalid batch data format for batch {$batch_id}");
+                            }
+                        </code_reference>
+                    </implementation>
+                </step>
+                <step>
+                    <name>Process products in batch</name>
+                    <implementation>
+                        <file>includes/class-shopcommerce-batch-processor.php</file>
+                        <lines>171-178</lines>
+                        <logic>
+                            - Call ShopCommerce_Product::process_batch($batch_data, $brand)
+                            - Pass batch data and brand information to product handler
+                            - Product handler processes each product in the batch:
+                              * Creates or updates WooCommerce products
+                              * Handles product images and metadata
+                              * Tracks success/failure counts
+                            - Return processing results (created, updated, errors counts)
+                        </logic>
+                        <code_reference>
+                            private function process_batch_data($batch_data, $brand, $categories) {
+                                return $this->product_handler->process_batch($batch_data, $brand);
+                            }
+                        </code_reference>
+                    </implementation>
+                </step>
+                <step>
+                    <name>Handle errors and retry logic</name>
+                    <implementation>
+                        <file>includes/class-shopcommerce-batch-processor.php</file>
+                        <lines>123-160</lines>
+                        <logic>
+                            - Wrap batch processing in try-catch block
+                            - Categorize errors by type: network, memory, database, api, validation, general
+                            - Check if batch should be retried based on:
+                              * Number of attempts (max 3 by default)
+                              * Error type (validation errors are not retryable)
+                            - If retryable, update status to 'failed' for retry mechanism
+                            - If not retryable, mark as permanently failed with error message
+                            - Log detailed error information with stack trace
+                        </logic>
+                        <code_reference>
+                            try {
+                                $results = $this->process_batch_data($batch_data, $batch->brand, $categories);
+                                $this->jobs_store->update_batch_status($batch_id, 'completed');
+                            } catch (Exception $e) {
+                                $error_type = $this->categorize_error($e);
+                                $should_retry = $this->should_retry_batch($batch_info, $error_type);
+
+                                if ($should_retry) {
+                                    $this->jobs_store->update_batch_status($batch_id, 'failed', $e->getMessage());
+                                } else {
+                                    $final_error = $e->getMessage() . ' (Max attempts reached or non-retryable error)';
+                                    $this->jobs_store->update_batch_status($batch_id, 'failed', $final_error);
+                                }
+                            }
+                        </code_reference>
+                    </implementation>
+                </step>
+                <step>
+                    <name>Update batch status to completed or failed</name>
+                    <implementation>
+                        <file>includes/class-shopcommerce-jobs-store.php</file>
+                        <lines>400-450</lines>
+                        <logic>
+                            - If successful: update status to 'completed' with completion timestamp
+                            - If failed: update status to 'failed' with error message
+                            - Set updated_at timestamp to track when batch was processed
+                            - Store processing results (counts of created/updated/error products)
+                            - Log final status for audit trail
+                        </logic>
+                        <code_reference>
+                            public function update_batch_status($batch_id, $status, $error_message = null) {
+                                global $wpdb;
+                                $table_name = $wpdb->prefix . 'shopcommerce_batch_queue';
+
+                                $data = [
+                                    'status' => $status,
+                                    'updated_at' => current_time('mysql')
+                                ];
+
+                                if ($error_message) {
+                                    $data['error_message'] = $error_message;
+                                }
+
+                                $wpdb->update($table_name, $data, ['id' => $batch_id]);
+                            }
+                        </code_reference>
+                    </implementation>
+                </step>
+                <step>
+                    <name>Update brand progress tracking</name>
+                    <implementation>
+                        <file>includes/class-shopcommerce-batch-processor.php</file>
+                        <lines>206-249</line>
+                        <logic>
+                            - Create or update brand progress transient: shopcommerce_progress_{brand}
+                            - Progress data includes:
+                              * brand: brand name
+                              * total_batches: total batches for this brand
+                              * completed_batches: number of completed batches
+                              * total_products: estimated total products
+                              * processed_products: actual processed products
+                              * created/updated/errors: product operation counts
+                              * started_at/updated_at: timestamps
+                            - Calculate completion percentage based on batches completed
+                            - Store transient with 1-hour expiry
+                        </logic>
+                        <code_reference>
+                            private function update_brand_progress($brand, $batch_index, $total_batches, $results) {
+                                $progress_key = "shopcommerce_progress_{$brand}";
+                                $progress_data = get_transient($progress_key);
+
+                                if (!$progress_data) {
+                                    $progress_data = [
+                                        'brand' => $brand,
+                                        'total_batches' => $total_batches,
+                                        'completed_batches' => 0,
+                                        'total_products' => 0,
+                                        'processed_products' => 0,
+                                        'created' => 0,
+                                        'updated' => 0,
+                                        'errors' => 0,
+                                        'started_at' => current_time('mysql'),
+                                        'updated_at' => current_time('mysql')
+                                    ];
+                                }
+
+                                $progress_data['completed_batches'] = max($progress_data['completed_batches'], $batch_index);
+                                $progress_data['processed_products'] += $results['total'] ?? 0;
+                                $progress_data['created'] += $results['created'] ?? 0;
+                                $progress_data['updated'] += $results['updated'] ?? 0;
+                                $progress_data['errors'] += $results['errors'] ?? 0;
+                                $progress_data['updated_at'] = current_time('mysql');
+
+                                set_transient($progress_key, $progress_data, HOUR_IN_SECONDS);
+                            }
+                        </code_reference>
+                    </implementation>
+                </step>
+                <step>
+                    <name>Cleanup old progress data</name>
+                    <implementation>
+                        <file>includes/class-shopcommerce-batch-processor.php</file>
+                        <lines>394-416</lines>
+                        <logic>
+                            - Remove old progress transients to prevent database bloat
+                            - Delete transients older than specified hours (default 24)
+                            - Query WordPress options table for shopcommerce_progress_* transients
+                            - Use SQL DELETE with WHERE clause on option_value timestamp
+                            - Log number of cleaned progress entries
+                        </logic>
+                        <code_reference>
+                            public function cleanup_old_progress($hours_old = 24) {
+                                global $wpdb;
+
+                                $cutoff_time = time() - ($hours_old * 3600);
+                                $transient_prefix = '_transient_shopcommerce_progress_';
+
+                                $result = $wpdb->query($wpdb->prepare(
+                                    "DELETE FROM {$wpdb->options}
+                                     WHERE option_name LIKE %s
+                                     AND option_value < %d",
+                                    $transient_prefix . '%',
+                                    $cutoff_time
+                                ));
+
+                                if ($result) {
+                                    $this->logger->info('Cleaned up old progress data', [
+                                        'hours_old' => $hours_old,
+                                        'deleted_count' => $result
+                                    ]);
+                                }
+
+                                return $result;
+                            }
+                        </code_reference>
+                    </implementation>
+                </step>
+            </steps>
+            <involved_classes>
+                <class>ShopCommerce_Batch_Processor</class>
+                <class>ShopCommerce_Jobs_Store</class>
+                <class>ShopCommerce_Product</class>
+                <class>ShopCommerce_Logger</class>
+            </involved_classes>
+        </flow>
+
+        <!-- API Communication Flow -->
+        <flow>
+            <name>API Communication</name>
+            <type>api</type>
+            <trigger>Product sync request</trigger>
+            <description>Handles OAuth2 authentication and API communication with ShopCommerce with comprehensive error handling</description>
+            <steps>
+                <step>
+                    <name>Check if access token is valid</name>
+                    <implementation>
+                        <file>includes/class-shopcommerce-api.php</file>
+                        <lines>80-95</lines>
+                        <logic>
+                            - Retrieve token from WordPress transient 'shopcommerce_access_token'
+                            - Check if token exists and is not expired
+                            - Validate token format and structure
+                            - Return valid token or false if invalid/expired
+                        </logic>
+                        <code_reference>
+                            public function is_token_valid($token) {
+                                if (empty($token)) {
+                                    return false;
+                                }
+
+                                // Check if token is in expected format (JWT)
+                                $parts = explode('.', $token);
+                                if (count($parts) !== 3) {
+                                    return false;
+                                }
+
+                                // Decode payload to check expiration
+                                $payload = json_decode(base64_decode($parts[1]));
+                                if (!$payload || !isset($payload->exp)) {
+                                    return false;
+                                }
+
+                                return $payload->exp > time();
+                            }
+                        </code_reference>
+                    </implementation>
+                </step>
+                <step>
+                    <name>If token expired, refresh token</name>
+                    <implementation>
+                        <file>includes/class-shopcommerce-api.php</file>
+                        <lines>97-120</lines>
+                        <logic>
+                            - Retrieve refresh token from transient 'shopcommerce_refresh_token'
+                            - If refresh token is valid, make API call to refresh endpoint
+                            - Send refresh token in request body with grant_type='refresh_token'
+                            - Parse response to get new access token and refresh token
+                            - Store new tokens in transients with appropriate expiry
+                            - Return new access token or throw exception on failure
+                        </logic>
+                        <code_reference>
+                            private function refresh_token() {
+                                $refresh_token = get_transient('shopcommerce_refresh_token');
+                                if (!$refresh_token || !$this->is_token_valid($refresh_token)) {
+                                    return $this->authenticate();
+                                }
+
+                                $data = [
+                                    'grant_type' => 'refresh_token',
+                                    'refresh_token' => $refresh_token
+                                ];
+
+                                $response = $this->make_token_request($data);
+                                $this->store_tokens($response);
+                                return $response->access_token;
+                            }
+                        </code_reference>
+                    </implementation>
+                </step>
+                <step>
+                    <name>If no token, perform OAuth2 authentication</name>
+                    <implementation>
+                        <file>includes/class-shopcommerce-api.php</file>
+                        <lines>140-180</lines>
+                        <logic>
+                            - Prepare OAuth2 password grant request data:
+                              * grant_type: 'password'
+                              * username: configured API username
+                              * password: configured API password
+                              * client_id: configured client ID
+                              * client_secret: configured client secret
+                            - Make POST request to token endpoint
+                            - Handle authentication errors (invalid credentials, server errors)
+                            - Parse JSON response to extract access_token, refresh_token, expires_in
+                            - Store tokens with appropriate expiry times
+                            - Log authentication success/failure
+                        </logic>
+                        <code_reference>
+                            private function authenticate() {
+                                $data = [
+                                    'grant_type' => 'password',
+                                    'username' => $this->username,
+                                    'password' => $this->password,
+                                    'client_id' => $this->client_id,
+                                    'client_secret' => $this->client_secret
+                                ];
+
+                                $response = $this->make_token_request($data);
+                                $this->store_tokens($response);
+                                return $response->access_token;
+                            }
+                        </code_reference>
+                    </implementation>
+                </step>
+                <step>
+                    <name>Prepare API request headers</name>
+                    <implementation>
+                        <file>includes/class-shopcommerce-api.php</file>
+                        <lines>250-270</lines>
+                        <logic>
+                            - Build headers array with required ShopCommerce API headers:
+                              * Authorization: Bearer {access_token}
+                              * Content-Type: application/json
+                              * Accept: application/xml
+                              * User-Agent: ShopCommerce-WP-Plugin/{version}
+                              * X-MARKS: {brand_name}
+                              * X-CATEGORIA: {comma_separated_category_codes}
+                            - Validate all required parameters are present
+                            - Sanitize header values to prevent injection
+                        </logic>
+                        <code_reference>
+                            private function prepare_headers($brand, $categories) {
+                                $headers = [
+                                    'Authorization: Bearer ' . $this->get_token(),
+                                    'Content-Type: application/json',
+                                    'Accept: application/xml',
+                                    'User-Agent: ShopCommerce-WP-Plugin/' . SHOPCOMMERCE_SYNC_VERSION,
+                                    'X-MARKS: ' . sanitize_text_field($brand)
+                                ];
+
+                                // Only add category header if categories are specified
+                                if (!empty($categories) && is_array($categories)) {
+                                    $headers[] = 'X-CATEGORIA: ' . implode(',', array_map('intval', $categories));
+                                }
+
+                                return $headers;
+                            }
+                        </code_reference>
+                    </implementation>
+                </step>
+                <step>
+                    <name>Set brand header (X-MARKS)</name>
+                    <implementation>
+                        <file>includes/class-shopcommerce-api.php</file>
+                        <lines>260-265</lines>
+                        <logic>
+                            - Sanitize brand name using sanitize_text_field()
+                            - Add X-MARKS header with brand name
+                            - Brand name identifies which manufacturer's products to retrieve
+                            - Must match exact brand names configured in ShopCommerce system
+                        </logic>
+                        <code_reference>
+                            'X-MARKS: ' . sanitize_text_field($brand)
+                        </code_reference>
+                    </implementation>
+                </step>
+                <step>
+                    <name>Set category header (X-CATEGORIA)</name>
+                    <implementation>
+                        <file>includes/class-shopcommerce-api.php</file>
+                        <lines>265-270</lines>
+                        <logic>
+                            - Only add category header if categories array is not empty
+                            - Convert category codes to integers and implode with commas
+                            - Category codes: 1=Accessories, 7=Computers, 12=Printing, 14=Video, 18=Servers
+                            - Empty arrays are NOT sent - this prevents the header from being added
+                        </logic>
+                        <code_reference>
+                            if (!empty($categories) && is_array($categories)) {
+                                $headers[] = 'X-CATEGORIA: ' . implode(',', array_map('intval', $categories));
+                            }
+                        </code_reference>
+                    </implementation>
+                </step>
+                <step>
+                    <name>Set authorization header (Bearer token)</name>
+                    <implementation>
+                        <file>includes/class-shopcommerce-api.php</file>
+                        <lines>255-256</lines>
+                        <logic>
+                            - Get valid access token using get_token() method
+                            - Format as 'Authorization: Bearer {token}'
+                            - This header is required for all authenticated API requests
+                            - Token is automatically refreshed if expired
+                        </logic>
+                        <code_reference>
+                            'Authorization: Bearer ' . $this->get_token()
+                        </code_reference>
+                    </implementation>
+                </step>
+                <step>
+                    <name>Send API request with 840-second timeout</name>
+                    <implementation>
+                        <file>includes/class-shopcommerce-api.php</file>
+                        <lines>300-350</lines>
+                        <logic>
+                            - Initialize cURL handle with API endpoint URL
+                            - Set cURL options:
+                              * CURLOPT_HTTPHEADER: prepared headers array
+                              * CURLOPT_TIMEOUT: 840 seconds (14 minutes)
+                              * CURLOPT_RETURNTRANSFER: true to return response
+                              * CURLOPT_SSL_VERIFYPEER: false for development (should be true in production)
+                              * CURLOPT_POST: true for POST requests
+                              * CURLOPT_POSTFIELDS: request data for POST
+                            - Execute cURL request and capture response
+                            - Check for cURL errors and HTTP status codes
+                            - Handle network timeouts, connection errors
+                        </logic>
+                        <code_reference>
+                            $ch = curl_init($url);
+                            curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
+                            curl_setopt($ch, CURLOPT_TIMEOUT, 840);
+                            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+                            curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+                            curl_setopt($ch, CURLOPT_POST, true);
+                            curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));
+
+                            $response = curl_exec($ch);
+                            $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+                            $error = curl_error($ch);
+                            curl_close($ch);
+
+                            if ($response === false) {
+                                throw new Exception("cURL error: {$error}");
+                            }
+
+                            if ($http_code !== 200) {
+                                throw new Exception("HTTP error: {$http_code}");
+                            }
+                        </code_reference>
+                    </implementation>
+                </step>
+                <step>
+                    <name>Handle API response and errors</name>
+                    <implementation>
+                        <file>includes/class-shopcommerce-api.php</file>
+                        <lines>350-400</lines>
+                        <logic>
+                            - Parse JSON response for token requests or XML for product requests
+                            - Validate response structure and content
+                            - Handle API-specific errors:
+                              * 401 Unauthorized: authentication failure
+                              * 403 Forbidden: insufficient permissions
+                              * 404 Not Found: endpoint not found
+                              * 500 Server Error: internal server error
+                              * 502/503/504: gateway/service unavailable
+                            - Extract error messages from response body
+                            - Log detailed error information for debugging
+                            - Throw appropriate exceptions with descriptive messages
+                        </logic>
+                        <code_reference>
+                            if ($http_code === 401) {
+                                throw new Exception("Authentication failed: Invalid credentials or expired token");
+                            } elseif ($http_code === 403) {
+                                throw new Exception("Access forbidden: Insufficient permissions");
+                            } elseif ($http_code === 404) {
+                                throw new Exception("API endpoint not found");
+                            } elseif ($http_code >= 500) {
+                                throw new Exception("Server error: {$http_code}");
+                            }
+
+                            // Parse response based on expected format
+                            $response_data = json_decode($response);
+                            if ($response_data === null) {
+                                throw new Exception("Invalid JSON response");
+                            }
+
+                            return $response_data;
+                        </code_reference>
+                    </implementation>
+                </step>
+                <step>
+                    <name>Cache token for future requests</name>
+                    <implementation>
+                        <file>includes/class-shopcommerce-api.php</file>
+                        <lines>200-230</lines>
+                        <logic>
+                            - Store access token in transient with expiry based on expires_in
+                            - Store refresh token in transient with longer expiry (typically 30 days)
+                            - Use WordPress transients for automatic expiration
+                            - Token caching reduces API calls and improves performance
+                            - Cache keys: 'shopcommerce_access_token', 'shopcommerce_refresh_token'
+                        </logic>
+                        <code_reference>
+                            private function store_tokens($response) {
+                                $access_token_expiry = $response->expires_in - 300; // 5 minute buffer
+                                set_transient('shopcommerce_access_token', $response->access_token, $access_token_expiry);
+
+                                // Refresh token typically lasts longer (30 days)
+                                $refresh_token_expiry = 30 * DAY_IN_SECONDS;
+                                set_transient('shopcommerce_refresh_token', $response->refresh_token, $refresh_token_expiry);
+
+                                $this->logger->info('Tokens stored successfully', [
+                                    'access_token_expiry' => $access_token_expiry,
+                                    'refresh_token_expiry' => $refresh_token_expiry
+                                ]);
+                            }
+                        </code_reference>
+                    </implementation>
+                </step>
+            </steps>
+            <involved_classes>
+                <class>ShopCommerce_API</class>
+                <class>ShopCommerce_Logger</class>
+            </involved_classes>
+        </flow>
+
+        <!-- Cron Scheduling Flow -->
+        <flow>
+            <name>Cron Scheduling</name>
+            <type>cron</type>
+            <trigger>WordPress cron system</trigger>
+            <description>Manages WordPress cron job scheduling for automated sync operations</description>
+            <steps>
+                <step>Register custom schedules (every_minute, every_15_minutes, every_30_minutes)</step>
+                <step>Schedule sync event with specified interval</step>
+                <step>Register cron hook callback</step>
+                <step>On cron trigger, run sync operation</step>
+                <step>Handle cron job execution</step>
+                <step>Log cron activity</step>
+                <step>Reschedule next run</step>
+            </steps>
+            <involved_classes>
+                <class>ShopCommerce_Cron</class>
+                <class>ShopCommerce_Sync</class>
+                <class>ShopCommerce_Logger</class>
+            </involved_classes>
+        </flow>
+
+        <!-- Order Management Flow -->
+        <flow>
+            <name>Order Management</name>
+            <type>orders</type>
+            <trigger>WooCommerce order creation/processing</trigger>
+            <description>Detects external provider products in orders and manages order metadata</description>
+            <steps>
+                <step>Hook into WooCommerce order lifecycle</step>
+                <step>Check order items for external provider products</step>
+                <step>Extract ShopCommerce metadata from products</step>
+                <step>Store external provider information in order metadata</step>
+                <step>Log order processing activity</step>
+                <step>Handle custom shipping fields</step>
+                <step>Update order status based on external provider</step>
+            </steps>
+            <involved_classes>
+                <class>functions-orders.php</class>
+                <class>ShopCommerce_Logger</class>
+            </involved_classes>
+        </flow>
+
+        <!-- Admin Interface Flow -->
+        <flow>
+            <name>Admin Interface</name>
+            <type>admin</type>
+            <trigger>Admin page access or AJAX request</trigger>
+            <description>Provides comprehensive admin interface for plugin management</description>
+            <steps>
+                <step>Register admin menu pages</step>
+                <step>Load admin templates</step>
+                <step>Handle AJAX requests</step>
+                <step>Process form submissions</step>
+                <step>Update plugin settings</step>
+                <step>Manage brands and categories</step>
+                <step>Display sync status and logs</step>
+                <step>Handle manual sync operations</step>
+            </steps>
+            <involved_classes>
+                <class>functions-admin.php</class>
+                <class>ShopCommerce_Config</class>
+                <class>ShopCommerce_Jobs_Store</class>
+                <class>ShopCommerce_Logger</class>
+                <class>ShopCommerce_Sync</class>
+            </involved_classes>
+        </flow>
+
+        <!-- Brand Management Flow -->
+        <flow>
+            <name>Brand Management</name>
+            <type>admin</type>
+            <trigger>Brand CRUD operations</trigger>
+            <description>Manages brand configurations and relationships with categories</description>
+            <steps>
+                <step>Create/Update/Delete brands</step>
+                <step>Manage brand-category relationships</step>
+                <step>Sync brands from API</step>
+                <step>Handle duplicate detection</step>
+                <step>Update database tables</step>
+                <step>Clear related caches</step>
+            </steps>
+            <involved_classes>
+                <class>ShopCommerce_Config</class>
+                <class>ShopCommerce_Jobs_Store</class>
+                <class>ShopCommerce_API</class>
+                <class>ShopCommerce_Logger</class>
+            </involved_classes>
+        </flow>
+
+        <!-- Debug and Diagnostics Flow -->
+        <flow>
+            <name>Debug and Diagnostics</name>
+            <type>debug</type>
+            <trigger>Manual debug request or automated diagnostics</trigger>
+            <description>Provides comprehensive debugging and diagnostics for troubleshooting</description>
+            <steps>
+                <step>Check WordPress cron status</step>
+                <step>Verify custom schedule registration</step>
+                <step>Test hook registration</step>
+                <step>Analyze current cron events</step>
+                <step>Test manual scheduling</step>
+                <step>Check plugin activation state</step>
+                <step>Generate diagnostic report</step>
+            </steps>
+            <involved_classes>
+                <class>ShopCommerce_Cron_Debug</class>
+                <class>ShopCommerce_Cron</class>
+                <class>ShopCommerce_Logger</class>
+            </involved_classes>
+        </flow>
+    </flows>
+
+    <!-- Dependencies and Integrations -->
+    <dependencies>
+        <!-- WordPress Core Dependencies -->
+        <wordpress>
+            <component>WordPress Core</component>
+            <version_min>5.0</version_min>
+            <usage>Plugin framework, hooks, options, cron system</usage>
+        </wordpress>
+        <wordpress>
+            <component>WooCommerce</component>
+            <version_min>3.0</version_min>
+            <usage>Product management, order processing, API integration</usage>
+        </wordpress>
+
+        <!-- PHP Dependencies -->
+        <php>
+            <component>PHP Core</component>
+            <version_min>7.2</version_min>
+            <usage>Language foundation, XML processing, database operations</usage>
+        </php>
+        <php>
+            <component>cURL</component>
+            <version_min>Enabled</version_min>
+            <usage>HTTP requests to ShopCommerce API</usage>
+        </php>
+        <php>
+            <component>SimpleXML</component>
+            <version_min>Enabled</version_min>
+            <usage>XML parsing for API responses</usage>
+        </php>
+        <php>
+            <component>MySQLi</component>
+            <version_min>Enabled</version_min>
+            <usage>Database operations for custom tables</usage>
+        </php>
+
+        <!-- External API Dependencies -->
+        <external>
+            <component>ShopCommerce API</component>
+            <base_url>https://shopcommerce.mps.com.co:7965/</base_url>
+            <authentication>OAuth2 Password Grant</authentication>
+            <endpoints>
+                <endpoint>/Token</endpoint>
+                <endpoint>/api/Webapi/VerCatalogo</endpoint>
+                <endpoint>/api/Webapi/VerMarcas</endpoint>
+                <endpoint>/api/Webapi/Ver_Categoria</endpoint>
+            </endpoints>
+            <usage>Product data retrieval, brand information, category data</usage>
+        </external>
+
+        <!-- Database Dependencies -->
+        <database>
+            <component>WordPress Database</component>
+            <usage>Options storage, core WordPress functionality</usage>
+        </database>
+        <database>
+            <component>Custom Tables</component>
+            <tables>
+                <table>wp_shopcommerce_brands</table>
+                <table>wp_shopcommerce_categories</table>
+                <table>wp_shopcommerce_brand_categories</table>
+                <table>wp_shopcommerce_batch_queue</table>
+            </tables>
+            <usage>Brand/category management, batch processing queue</usage>
+        </database>
+
+        <!-- File System Dependencies -->
+        <filesystem>
+            <component>WordPress File System</component>
+            <usage>Plugin file operations, logging</usage>
+        </filesystem>
+        <filesystem>
+            <component>Log Files</component>
+            <path>/logs/shopcommerce-sync.log</path>
+            <usage>Detailed activity logging</usage>
+        </filesystem>
+
+        <!-- Cache Dependencies -->
+        <cache>
+            <component>WordPress Transients</component>
+            <usage>API token caching, job store caching, progress tracking</usage>
+        </cache>
+        <cache>
+            <component>Object Cache</component>
+            <usage>Performance optimization for frequently accessed data</usage>
+        </cache>
+    </dependencies>
+
+    <!-- Configuration -->
+    <configuration>
+        <api>
+            <base_url>https://shopcommerce.mps.com.co:7965/</base_url>
+            <token_endpoint>/Token</token_endpoint>
+            <timeout>840 seconds</timeout>
+            <auth_type>OAuth2 Password Grant</auth_type>
+            <credentials_location>includes/class-shopcommerce-api.php:33-34</credentials_location>
+        </api>
+        <sync>
+            <default_interval>hourly</default_interval>
+            <batch_size>100 products</batch_size>
+            <timeout>60 seconds per batch</timeout>
+            <retry_attempts>3</retry_attempts>
+        </sync>
+        <categories>
+            <category>
+                <code>1</code>
+                <name>Accessories</name>
+            </category>
+            <category>
+                <code>7</code>
+                <name>Computers</name>
+            </category>
+            <category>
+                <code>12</code>
+                <name>Printing</name>
+            </category>
+            <category>
+                <code>14</code>
+                <name>Video</name>
+            </category>
+            <category>
+                <code>18</code>
+                <name>Servers</name>
+            </category>
+        </categories>
+        <default_brands>
+            <brand>
+                <name>HP Inc</name>
+                <categories>all</categories>
+            </brand>
+            <brand>
+                <name>DELL</name>
+                <categories>all</categories>
+            </brand>
+            <brand>
+                <name>LENOVO</name>
+                <categories>all</categories>
+            </brand>
+            <brand>
+                <name>APPLE</name>
+                <categories>1,7</categories>
+            </brand>
+            <brand>
+                <name>ASUS</name>
+                <categories>7</categories>
+            </brand>
+            <brand>
+                <name>BOSE</name>
+                <categories>all</categories>
+            </brand>
+            <brand>
+                <name>EPSON</name>
+                <categories>all</categories>
+            </brand>
+            <brand>
+                <name>JBL</name>
+                <categories>all</categories>
+            </brand>
+        </default_brands>
+    </configuration>
+
+    <!-- Key Features -->
+    <features>
+        <feature>
+            <name>Automated Product Synchronization</name>
+            <description>Synchronizes products from ShopCommerce API to WooCommerce automatically</description>
+        </feature>
+        <feature>
+            <name>Batch Processing</name>
+            <description>Processes products in configurable batches to avoid timeouts</description>
+        </feature>
+        <feature>
+            <name>Brand and Category Management</name>
+            <description>Dynamic configuration of brands and categories through admin interface</description>
+        </feature>
+        <feature>
+            <name>Order Integration</name>
+            <description>Detects external provider products in WooCommerce orders</description>
+        </feature>
+        <feature>
+            <name>Comprehensive Logging</name>
+            <description>Detailed activity tracking with file-based and database logging</description>
+        </feature>
+        <feature>
+            <name>Admin Interface</name>
+            <description>Complete admin dashboard for plugin management and monitoring</description>
+        </feature>
+        <feature>
+            <name>Debug Tools</name>
+            <description>Comprehensive debugging and diagnostics for troubleshooting</description>
+        </feature>
+        <feature>
+            <name>Retry Logic</name>
+            <description>Automatic retry mechanisms for failed operations</description>
+        </feature>
+        <feature>
+            <name>Progress Tracking</name>
+            <description>Real-time progress monitoring for sync operations</description>
+        </feature>
+        <feature>
+            <name>Cache Management</name>
+            <description>Intelligent caching for performance optimization</description>
+        </feature>
+    </features>
+
+    <!-- Security Considerations -->
+    <security>
+        <consideration>
+            <type>API Credentials</type>
+            <description>Currently hardcoded, should be moved to WordPress options</description>
+        </consideration>
+        <consideration>
+            <type>Input Validation</type>
+            <description>WordPress security best practices should be followed</description>
+        </consideration>
+        <consideration>
+            <type>Nonce Verification</type>
+            <description>Should be implemented for all admin actions</description>
+        </consideration>
+        <consideration>
+            <type>Capability Checks</type>
+            <description>Should be implemented for admin functions</description>
+        </consideration>
+        <consideration>
+            <type>Rate Limiting</type>
+            <description>Should be implemented for API calls</description>
+        </consideration>
+    </security>
+
+    <!-- Performance Considerations -->
+    <performance>
+        <consideration>
+            <type>Batch Processing</type>
+            <description>Configurable batch sizes to prevent timeouts</description>
+        </consideration>
+        <consideration>
+            <type>Caching</type>
+            <description>API token caching and job store optimization</description>
+        </consideration>
+        <consideration>
+            <type>Memory Management</type>
+            <description>Efficient memory usage for large catalogs</description>
+        </consideration>
+        <consideration>
+            <type>Image Updates</type>
+            <description>Smart image update tracking to prevent unnecessary downloads</description>
+        </consideration>
+        <consideration>
+            <type>Database Optimization</type>
+            <description>Indexed tables and optimized queries</description>
+        </consideration>
+    </performance>
+
+    <!-- File Structure -->
+    <file_structure>
+        <file>
+            <path>index.php</path>
+            <type>Main Plugin File</type>
+            <description>Plugin initialization and dependency management</description>
+        </file>
+        <file>
+            <path>includes/class-shopcommerce-logger.php</path>
+            <type>Core Class</type>
+            <description>Logging and activity tracking</description>
+        </file>
+        <file>
+            <path>includes/class-shopcommerce-api.php</path>
+            <type>Core Class</type>
+            <description>API client and authentication</description>
+        </file>
+        <file>
+            <path>includes/class-shopcommerce-helpers.php</path>
+            <type>Core Class</type>
+            <description>Utility functions and helpers</description>
+        </file>
+        <file>
+            <path>includes/class-shopcommerce-product.php</path>
+            <type>Core Class</type>
+            <description>WooCommerce product management</description>
+        </file>
+        <file>
+            <path>includes/class-shopcommerce-cron.php</path>
+            <type>Core Class</type>
+            <description>Cron job scheduling</description>
+        </file>
+        <file>
+            <path>includes/class-shopcommerce-sync.php</path>
+            <type>Core Class</type>
+            <description>Sync coordination and business logic</description>
+        </file>
+        <file>
+            <path>includes/class-shopcommerce-config.php</path>
+            <type>Core Class</type>
+            <description>Configuration management</description>
+        </file>
+        <file>
+            <path>includes/class-shopcommerce-jobs-store.php</path>
+            <type>Core Class</type>
+            <description>Jobs and queue management</description>
+        </file>
+        <file>
+            <path>includes/class-shopcommerce-batch-processor.php</path>
+            <type>Core Class</type>
+            <description>Batch processing with retry logic</description>
+        </file>
+        <file>
+            <path>includes/class-shopcommerce-cron-debug.php</path>
+            <type>Core Class</type>
+            <description>Cron debugging utilities</description>
+        </file>
+        <file>
+            <path>includes/functions-admin.php</path>
+            <type>Admin Functions</type>
+            <description>Admin interface and AJAX endpoints</description>
+        </file>
+        <file>
+            <path>includes/functions-orders.php</path>
+            <type>Order Functions</type>
+            <description>Order management and external product detection</description>
+        </file>
+        <file>
+            <path>admin/</path>
+            <type>Directory</type>
+            <description>Admin interface templates and assets</description>
+        </file>
+        <file>
+            <path>logs/</path>
+            <type>Directory</type>
+            <description>Log files directory</description>
+        </file>
+    </file_structure>
+
+    <!-- Known Issues and Limitations -->
+    <known_issues>
+        <issue>
+            <type>Security</type>
+            <description>API credentials are hardcoded in class-shopcommerce-api.php</description>
+            <severity>High</severity>
+        </issue>
+        <issue>
+            <type>Configuration</type>
+            <description>Version constant mismatch between plugin header and SHOPCOMMERCE_SYNC_VERSION</description>
+            <severity>Low</severity>
+        </issue>
+        <issue>
+            <type>Performance</type>
+            <description>Large product catalogs may require memory optimization</description>
+            <severity>Medium</severity>
+        </issue>
+        <issue>
+            <type>Compatibility</type>
+            <description>Tested with specific WordPress/WooCommerce versions</description>
+            <severity>Medium</severity>
+        </issue>
+    </known_issues>
+
+    <!-- Future Enhancements -->
+    <future_enhancements>
+        <enhancement>
+            <name>API Credential Management</name>
+            <description>Move API credentials to WordPress options or environment variables</description>
+        </enhancement>
+        <enhancement>
+            <name>Improved Error Handling</name>
+            <description>Enhanced error recovery and user feedback</description>
+        </enhancement>
+        <enhancement>
+            <name>Performance Optimization</name>
+            <description>Database query optimization and caching improvements</description>
+        </enhancement>
+        <enhancement>
+            <name>Security Enhancements</name>
+            <description>Nonce verification, capability checks, and input validation</description>
+        </enhancement>
+        <enhancement>
+            <name>Testing Framework</name>
+            <description>Unit and integration tests for better reliability</description>
+        </enhancement>
+    </future_enhancements>
+
+    <!-- Summary -->
+    <summary>
+        <description>The ShopCommerce Product Sync Plugin is a sophisticated WordPress plugin that provides comprehensive product synchronization between an external ShopCommerce API and WooCommerce. It features a modular architecture with dependency injection, database-driven configuration, batch processing, and comprehensive logging. The plugin supports multiple brands and categories, order integration, and provides extensive admin interface and debugging capabilities.</description>
+        <complexity>High</complexity>
+        <maintainability>Good (modular architecture)</maintainability>
+        <scalability>Good (batch processing and caching)</scalability>
+        <reliability>Good (retry logic and error handling)</reliability>
+    </summary>
+</shopcommerce_plugin_architecture>

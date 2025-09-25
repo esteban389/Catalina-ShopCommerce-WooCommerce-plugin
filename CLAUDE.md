@@ -2,6 +2,38 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## ⚠️ IMPORTANT: Architecture Update Requirement
+
+**ALL CHANGES to the plugin must first be reflected in the `shopcommerce-plugin-architecture.xml` file before implementation.**
+
+### What Must Be Updated in the XML File:
+- **New classes or methods** → Add to `<classes>` section
+- **Database schema changes** → Update `<database_schema>` section
+- **New flows or modified flows** → Update `<flows>` section
+- **Configuration changes** → Update `<configuration>` section
+- **New dependencies** → Update `<dependencies>` section
+- **File structure changes** → Update `<file_structure>` section
+
+### Required Process:
+1. **Update the XML file** with proposed changes first
+2. **Present changes to user for confirmation**
+3. **Once confirmed, proceed with implementation**
+4. **Update XML file again** to reflect final implementation
+
+### Purpose:
+This ensures the architecture documentation always matches the actual codebase, maintaining consistency between documentation and implementation.
+
+## Architecture Reference
+The `shopcommerce-plugin-architecture.xml` file contains the complete, detailed architecture specification including:
+- Class definitions and relationships
+- Database schema
+- Flow analysis
+- Dependencies and integrations
+- Configuration details
+- Security and performance considerations
+
+Always consult and update this XML file before making any changes to the codebase.
+
 ## Project Overview
 
 This is a WordPress plugin called "ShopCommerce Product Sync Plugin" that synchronizes products from an external ShopCommerce API with WooCommerce. The plugin is specifically designed for Hekalsoluciones and features a modular architecture with automated scheduling functionality.
@@ -18,6 +50,8 @@ This is a WordPress plugin called "ShopCommerce Product Sync Plugin" that synchr
   - `class-shopcommerce-cron-debug.php` - Debug utilities for cron system diagnostics
   - `class-shopcommerce-sync.php` - Main sync coordination and business logic
   - `class-shopcommerce-config.php` - Dynamic configuration management with database storage
+  - `class-shopcommerce-jobs-store.php` - Centralized job and batch management with database storage
+  - `class-shopcommerce-batch-processor.php` - Asynchronous batch processing with timeout handling and retry logic
   - `functions-admin.php` - Admin interface functions and menu setup
   - `functions-orders.php` - Order management and external provider product detection
 - `admin/templates/` - Admin interface templates for dashboard, settings, products, orders, brands, sync control, and logs
@@ -123,6 +157,24 @@ if (isset($GLOBALS['shopcommerce_sync'])) {
 }
 ```
 
+**Batch Processing Debug:**
+```php
+// Process next batch in queue
+if (isset($GLOBALS['shopcommerce_batch_processor'])) {
+    $result = $GLOBALS['shopcommerce_batch_processor']->process_next_batch();
+}
+
+// Get batch queue statistics
+if (isset($GLOBALS['shopcommerce_jobs_store'])) {
+    $stats = $GLOBALS['shopcommerce_jobs_store']->get_queue_stats();
+}
+
+// Clear failed batches and reset queue
+if (isset($GLOBALS['shopcommerce_jobs_store'])) {
+    $result = $GLOBALS['shopcommerce_jobs_store']->clear_failed_batches();
+}
+```
+
 ### Code Standards
 - Follow WordPress coding standards
 - Use proper PHP documentation blocks
@@ -190,6 +242,7 @@ if (isset($GLOBALS['shopcommerce_sync'])) {
 - **ShopCommerce_Cron**: WordPress cron job scheduling and management with custom schedule intervals
 - **ShopCommerce_Cron_Debug**: Comprehensive debug utilities for cron system diagnostics
 - **ShopCommerce_Sync**: Main sync coordination and business logic with job queue processing
+- **ShopCommerce_Batch_Processor**: Asynchronous batch processing with timeout handling, retry logic, and queue management
 
 ### Critical Architecture Patterns
 
@@ -198,6 +251,13 @@ if (isset($GLOBALS['shopcommerce_sync'])) {
 2. **Secondary**: `ShopCommerce_Config` (dynamic configuration)
 3. **Fallback**: `ShopCommerce_Helpers` (hardcoded configuration)
 4. **Ultimate Fallback**: `ShopCommerce_Cron` (static hardcoded jobs)
+
+**Batch Processing Architecture:**
+- **Queue Management**: Centralized batch queue with status tracking (pending, processing, completed, failed)
+- **Asynchronous Processing**: Non-blocking batch execution with timeout handling (60 seconds per batch)
+- **Retry Logic**: Automatic retry mechanism for failed batches with exponential backoff
+- **Progress Monitoring**: Real-time progress tracking and statistics reporting
+- **Error Recovery**: Graceful error handling with detailed logging and recovery options
 
 **Brand-Category Handling:**
 - Brands with "all categories" must send all available category codes `[1, 7, 12, 14, 18]` to API
@@ -220,6 +280,7 @@ if (isset($GLOBALS['shopcommerce_sync'])) {
 - **Orders**: Order management with external provider detection (NEW)
 - **Brands & Categories**: Brand and category configuration management (NEW)
 - **Sync Control**: Manual sync operations and queue management
+- **Batches**: Batch processing management and progress tracking (NEW)
 - **Settings**: Configuration for API, sync behavior, and logging
 - **Logs**: Enhanced activity log viewing and management (ENHANCED)
 
@@ -275,6 +336,7 @@ The plugin creates custom database tables for configuration and job management:
 - `wp_shopcommerce_brands`: Stores brand configurations (id, name, slug, description, is_active)
 - `wp_shopcommerce_categories`: Stores category mappings (id, name, code, description, is_active)
 - `wp_shopcommerce_brand_categories`: Stores brand-category relationships (brand_id, category_id)
+- `wp_shopcommerce_batch_queue`: Batch processing queue management with status tracking and progress monitoring
 
 ### Table Management
 - Tables are created automatically on plugin activation by both `ShopCommerce_Jobs_Store` and `ShopCommerce_Config`
@@ -302,6 +364,13 @@ The plugin creates custom database tables for configuration and job management:
 - Available as `$GLOBALS['shopcommerce_*']` variables
 - Follows dependency injection pattern for class instantiation
 - Logger is always initialized first to ensure proper logging throughout the system
+
+### Batch Processing System
+- **Queue-based Architecture**: Products processed through managed queue system rather than direct API calls
+- **Configurable Batch Sizes**: Default 500 products per batch, adjustable based on server capabilities
+- **Status Tracking**: Real-time monitoring of batch progress with detailed status information
+- **Error Handling**: Comprehensive error recovery with automatic retry and manual intervention options
+- **Resource Management**: Memory-efficient processing designed for large catalogs (10,000+ products)
 
 ### AJAX Endpoints
 The plugin provides extensive AJAX functionality through functions-admin.php:
