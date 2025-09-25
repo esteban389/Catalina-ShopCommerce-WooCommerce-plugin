@@ -596,6 +596,7 @@
                               * Authorization: Bearer {token}
                               * X-MARKS: {brand_name}
                               * X-CATEGORIA: {comma_separated_category_codes}
+                              * X-DISPONIBILIDAD: 1
                             - Configure cURL options:
                               * Timeout: 840 seconds (14 minutes)
                               * SSL verification disabled for localhost development
@@ -1276,6 +1277,7 @@
                               * User-Agent: ShopCommerce-WP-Plugin/{version}
                               * X-MARKS: {brand_name}
                               * X-CATEGORIA: {comma_separated_category_codes}
+                              * X-DISPONIBILIDAD: 1
                             - Validate all required parameters are present
                             - Sanitize header values to prevent injection
                         </logic>
@@ -1286,7 +1288,8 @@
                                     'Content-Type: application/json',
                                     'Accept: application/xml',
                                     'User-Agent: ShopCommerce-WP-Plugin/' . SHOPCOMMERCE_SYNC_VERSION,
-                                    'X-MARKS: ' . sanitize_text_field($brand)
+                                    'X-MARKS: ' . sanitize_text_field($brand),
+                                    'X-DISPONIBILIDAD: 1'
                                 ];
 
                                 // Only add category header if categories are specified
@@ -1330,6 +1333,22 @@
                             if (!empty($categories) && is_array($categories)) {
                                 $headers[] = 'X-CATEGORIA: ' . implode(',', array_map('intval', $categories));
                             }
+                        </code_reference>
+                    </implementation>
+                </step>
+                <step>
+                    <name>Set availability header (X-DISPONIBILIDAD)</name>
+                    <implementation>
+                        <file>includes/class-shopcommerce-api.php</file>
+                        <lines>135</lines>
+                        <logic>
+                            - Add X-DISPONIBILIDAD header with fixed value '1'
+                            - This header indicates that only available products should be returned
+                            - Value '1' means filter for available/active products only
+                            - This header is always included for product catalog requests in the get_catalog() method
+                        </logic>
+                        <code_reference>
+                            'X-DISPONIBILIDAD' => '1',
                         </code_reference>
                     </implementation>
                 </step>

@@ -132,6 +132,7 @@ class ShopCommerce_API {
             'Authorization' => 'Bearer ' . $token,
             'Content-Type' => 'application/json',
             'X-MARKS' => $brand,
+            'X-DISPONIBILIDAD' => '1',
         ];
 
         // Add category header if specified
