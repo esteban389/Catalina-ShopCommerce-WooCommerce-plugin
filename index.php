@@ -29,6 +29,7 @@ define('BATCH_PROCESS_HOOK_NAME', 'shopcommerce_batch_process_hook');
 
 // Include the main classes
 require_once SHOPCOMMERCE_SYNC_INCLUDES_DIR . 'class-shopcommerce-logger.php';
+require_once SHOPCOMMERCE_SYNC_INCLUDES_DIR . 'class-shopcommerce-migrator.php';
 require_once SHOPCOMMERCE_SYNC_INCLUDES_DIR . 'class-shopcommerce-api.php';
 require_once SHOPCOMMERCE_SYNC_INCLUDES_DIR . 'class-shopcommerce-helpers.php';
 require_once SHOPCOMMERCE_SYNC_INCLUDES_DIR . 'class-shopcommerce-product.php';
@@ -50,6 +51,11 @@ function shopcommerce_sync_init()
 {
     // Initialize the logger first
     $logger = new ShopCommerce_Logger();
+
+    // Initialize central migrator first to ensure database schema is ready
+    $migrator = new ShopCommerce_Migrator($logger);
+    $migrator->run_migrations();
+    $GLOBALS['shopcommerce_migrator'] = $migrator;
 
     // Initialize jobs store first
     $jobs_store = new ShopCommerce_Jobs_Store($logger);
@@ -98,6 +104,13 @@ function shopcommerce_sync_activate()
     // Create logs directory if it doesn't exist
     if (!file_exists(SHOPCOMMERCE_SYNC_LOGS_DIR)) {
         wp_mkdir_p(SHOPCOMMERCE_SYNC_LOGS_DIR);
+    }
+
+    // Initialize migrator to ensure database schema is ready
+    if (class_exists('ShopCommerce_Migrator')) {
+        $logger = new ShopCommerce_Logger();
+        $migrator = new ShopCommerce_Migrator($logger);
+        $migrator->run_migrations();
     }
 
     // Initialize jobs store and cron scheduler

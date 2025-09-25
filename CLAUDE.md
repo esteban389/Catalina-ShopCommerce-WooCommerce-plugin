@@ -2,6 +2,12 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+Never add inline comments, only documentation comments
+
+## ⚠️ IMPORTANT: Additional project understanding
+Read the file `shopcommerce-plugin-architecture.xml` which contains additional information
+to understand the structure of the project
+
 ## ⚠️ IMPORTANT: Architecture Update Requirement
 
 **ALL CHANGES to the plugin must first be reflected in the `shopcommerce-plugin-architecture.xml` file before implementation.**
