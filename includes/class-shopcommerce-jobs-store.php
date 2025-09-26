@@ -757,13 +757,6 @@ class ShopCommerce_Jobs_Store {
 
             $this->logger->info('Cleared all existing brands and categories');
 
-            // Use central migrator to reinitialize default data
-            if (isset($GLOBALS['shopcommerce_migrator'])) {
-                $GLOBALS['shopcommerce_migrator']->run_migrations();
-            } else {
-                $this->logger->warning('Central migrator not available during reset');
-            }
-
             // Clear cache
             $this->clear_cache();
 

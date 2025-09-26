@@ -920,6 +920,243 @@
             </involved_classes>
         </flow>
 
+        <!-- Synchronous Brand Sync Flow -->
+        <flow>
+            <name>Synchronous Brand Sync</name>
+            <type>sync</type>
+            <trigger>Manual brand sync request</trigger>
+            <description>Synchronizes products for a specific brand synchronously without batch processing, processing all products immediately</description>
+            <steps>
+                <step>
+                    <name>Validate brand ID and configuration</name>
+                    <implementation>
+                        <file>includes/class-shopcommerce-sync.php</file>
+                        <lines>NEW</lines>
+                        <logic>
+                            - Receive brand ID as parameter
+                            - Validate brand exists in Jobs Store
+                            - Get brand configuration and associated categories
+                            - Handle special case for 'all' categories
+                            - Return error if brand is not configured or invalid
+                        </logic>
+                        <code_reference>
+                            public function sync_brand_synchronously($brand_id) {
+                                $brand = $this->jobs_store->get_brand_by_id($brand_id);
+                                if (!$brand) {
+                                    throw new Exception("Brand not found: {$brand_id}");
+                                }
+
+                                $categories = $this->jobs_store->get_brand_categories($brand_id);
+                                // Handle 'all' categories logic
+                                if (empty($categories) || in_array('all', $categories)) {
+                                    $categories = [1, 7, 12, 14, 18];
+                                }
+                            }
+                        </code_reference>
+                    </implementation>
+                </step>
+                <step>
+                    <name>Authenticate with ShopCommerce API</name>
+                    <implementation>
+                        <file>includes/class-shopcommerce-sync.php</file>
+                        <lines>NEW</lines>
+                        <logic>
+                            - Use existing API authentication mechanism
+                            - Get valid access token with automatic refresh
+                            - Handle authentication errors
+                            - Proceed only if authentication is successful
+                        </logic>
+                        <code_reference>
+                            $token = $this->api->get_token();
+                            if (!$token) {
+                                throw new Exception("API authentication failed");
+                            }
+                        </code_reference>
+                    </implementation>
+                </step>
+                <step>
+                    <name>Fetch products from API for brand</name>
+                    <implementation>
+                        <file>includes/class-shopcommerce-sync.php</file>
+                        <lines>NEW</lines>
+                        <logic>
+                            - Make API request with brand and category headers
+                            - Use same API endpoint as regular sync: /api/Webapi/VerCatalogo
+                            - Set timeout to 840 seconds (14 minutes)
+                            - Handle API errors and network issues
+                            - Return XML response with product data
+                        </logic>
+                        <code_reference>
+                            $api_response = $this->api->obtenerProductos($brand_name, $categories);
+                            if (!$api_response) {
+                                throw new Exception("Failed to fetch products from API");
+                            }
+                        </code_reference>
+                    </implementation>
+                </step>
+                <step>
+                    <name>Parse XML and extract product data</name>
+                    <implementation>
+                        <file>includes/class-shopcommerce-sync.php</file>
+                        <lines>NEW</lines>
+                        <logic>
+                            - Convert XML response to SimpleXMLElement object
+                            - Extract product nodes from XML structure
+                            - For each product, extract:
+                              * SKU (Código)
+                              * Name (Nombre)
+                              * Description (Descripción)
+                              * Price (Precio)
+                              * Stock (Stock)
+                              * Brand (Marca)
+                              * Category (Categoría)
+                              * Images (Imágenes)
+                            - Sanitize and validate product data
+                            - Build product array for immediate processing
+                        </logic>
+                        <code_reference>
+                            $xml = simplexml_load_string($api_response);
+                            $products = [];
+
+                            foreach ($xml->Producto as $product_xml) {
+                                $product_data = [
+                                    'sku' => (string) $product_xml->Código,
+                                    'name' => (string) $product_xml->Nombre,
+                                    'description' => (string) $product_xml->Descripción,
+                                    'price' => (float) $product_xml->Precio,
+                                    'stock' => (int) $product_xml->Stock,
+                                    'brand' => (string) $product_xml->Marca,
+                                    'category' => (string) $product_xml->Categoría,
+                                    'images' => $this->extract_images_from_xml($product_xml->Imágenes)
+                                ];
+                                $products[] = $product_data;
+                            }
+                        </code_reference>
+                    </implementation>
+                </step>
+                <step>
+                    <name>Process products synchronously (no batches)</name>
+                    <implementation>
+                        <file>includes/class-shopcommerce-sync.php</file>
+                        <lines>NEW</lines>
+                        <logic>
+                            - Set higher execution limits for synchronous processing
+                            - Process each product immediately without batching
+                            - For each product:
+                              * Check if product exists in WooCommerce
+                              * Create or update product directly
+                              * Handle product images and metadata
+                              * Track success/failure for each product
+                            - Continue processing all products even if some fail
+                        </logic>
+                        <code_reference>
+                            // Set higher execution limits for sync processing
+                            set_time_limit(900); // 15 minutes
+                            ini_set('memory_limit', '512M');
+
+                            $results = [
+                                'total' => count($products),
+                                'created' => 0,
+                                'updated' => 0,
+                                'errors' => 0,
+                                'error_details' => []
+                            ];
+
+                            foreach ($products as $product_data) {
+                                try {
+                                    $result = $this->product_handler->create_or_update_product($product_data);
+                                    if ($result['created']) {
+                                        $results['created']++;
+                                    } else {
+                                        $results['updated']++;
+                                    }
+                                } catch (Exception $e) {
+                                    $results['errors']++;
+                                    $results['error_details'][] = [
+                                        'sku' => $product_data['sku'],
+                                        'error' => $e->getMessage()
+                                    ];
+                                    // Continue processing other products
+                                }
+                            }
+                        </code_reference>
+                    </implementation>
+                </step>
+                <step>
+                    <name>Handle images and metadata for each product</name>
+                    <implementation>
+                        <file>includes/class-shopcommerce-product.php</file>
+                        <lines>200-280</lines>
+                        <logic>
+                            - For each successfully created/updated product:
+                              * Download product images from remote URLs
+                              * Attach images to product gallery
+                              * Set featured image
+                              * Skip duplicate images to prevent unnecessary downloads
+                              * Update product metadata:
+                                * _shopcommerce_brand: brand name
+                                * _shopcommerce_category: category code
+                                * _shopcommerce_last_sync: timestamp
+                                * _shopcommerce_provider: 'ShopCommerce'
+                        </logic>
+                        <code_reference>
+                            public function update_product_metadata($product_id, $product_data) {
+                                update_post_meta($product_id, '_shopcommerce_brand', $product_data['brand']);
+                                update_post_meta($product_id, '_shopcommerce_category', $product_data['category']);
+                                update_post_meta($product_id, '_shopcommerce_last_sync', current_time('mysql'));
+                                update_post_meta($product_id, '_shopcommerce_provider', 'ShopCommerce');
+
+                                $this->update_product_images($product_id, $product_data['images']);
+                            }
+                        </code_reference>
+                    </implementation>
+                </step>
+                <step>
+                    <name>Return comprehensive sync results</name>
+                    <implementation>
+                        <file>includes/class-shopcommerce-sync.php</file>
+                        <lines>NEW</lines>
+                        <logic>
+                            - Compile sync results including:
+                              * Total products processed
+                              * Number of products created
+                              * Number of products updated
+                              * Number of errors encountered
+                              * Detailed error information for failed products
+                              * Processing time and performance metrics
+                            - Log sync completion with detailed statistics
+                            - Return results for display in admin interface
+                        </logic>
+                        <code_reference>
+                            $processing_time = microtime(true) - $start_time;
+
+                            $sync_results = [
+                                'success' => true,
+                                'brand' => $brand_name,
+                                'products_processed' => $results['total'],
+                                'products_created' => $results['created'],
+                                'products_updated' => $results['updated'],
+                                'errors' => $results['errors'],
+                                'error_details' => $results['error_details'],
+                                'processing_time' => $processing_time,
+                                'timestamp' => current_time('mysql')
+                            ];
+
+                            $this->logger->info('Synchronous brand sync completed', $sync_results);
+                            return $sync_results;
+                        </code_reference>
+                    </implementation>
+                </step>
+            </steps>
+            <involved_classes>
+                <class>ShopCommerce_Sync</class>
+                <class>ShopCommerce_Jobs_Store</class>
+                <class>ShopCommerce_API</class>
+                <class>ShopCommerce_Product</class>
+                <class>ShopCommerce_Logger</class>
+            </involved_classes>
+        </flow>
+
         <!-- Batch Processing Flow -->
         <flow>
             <name>Batch Processing</name>

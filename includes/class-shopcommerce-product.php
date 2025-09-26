@@ -412,8 +412,19 @@ class ShopCommerce_Product {
         // Apply the mapped data to existing product
         $this->apply_product_data($existing_product, $mapped_data, $product_data, $brand);
 
+        $this->logger->debug('Apply Product Data', [
+            'existing_product_stock_quantity' => $existing_product->get_stock_quantity(),
+            'existing_product_stock_status' => $existing_product->get_stock_status(),
+        ]);
+
         // Save the updated product
         $save_result = $existing_product->save();
+
+        $this->logger->debug('Save Result', [
+            'save_result' => $save_result,
+            'existing_product_stock_quantity' => $existing_product->get_stock_quantity(),
+            'existing_product_stock_status' => $existing_product->get_stock_status(),
+        ]);
 
         if ($save_result) {
             $this->logger->info('Successfully updated product', [
@@ -554,6 +565,7 @@ class ShopCommerce_Product {
 
         // Set stock quantity if available
         if ($mapped_data['stock_quantity'] !== null) {
+            $wc_product->set_manage_stock(true);
             $wc_product->set_stock_quantity($mapped_data['stock_quantity']);
         }
 

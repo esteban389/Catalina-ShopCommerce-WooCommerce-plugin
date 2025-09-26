@@ -379,6 +379,9 @@ function shopcommerce_register_ajax_handlers() {
     // Run manual sync
     add_action('wp_ajax_shopcommerce_run_sync', 'shopcommerce_ajax_run_sync');
 
+    // Synchronous brand sync
+    add_action('wp_ajax_shopcommerce_sync_brand_synchronously', 'shopcommerce_ajax_sync_brand_synchronously');
+
     // Get queue status
     add_action('wp_ajax_shopcommerce_queue_status', 'shopcommerce_ajax_queue_status');
 
@@ -506,6 +509,68 @@ function shopcommerce_ajax_run_sync() {
     }
 
     wp_send_json_success($results);
+}
+
+/**
+ * AJAX handler for synchronous brand sync
+ *
+ * Processes all products for a specific brand immediately without batch processing
+ */
+function shopcommerce_ajax_sync_brand_synchronously() {
+    check_ajax_referer('shopcommerce_admin_nonce', 'nonce');
+
+    if (!current_user_can('manage_options')) {
+        wp_send_json_error(['message' => 'Insufficient permissions']);
+    }
+
+    $brand_id = isset($_POST['brand_id']) ? intval($_POST['brand_id']) : 0;
+    if ($brand_id <= 0) {
+        wp_send_json_error(['message' => 'Invalid brand ID']);
+    }
+
+    $sync_handler = isset($GLOBALS['shopcommerce_sync']) ? $GLOBALS['shopcommerce_sync'] : null;
+    if (!$sync_handler) {
+        wp_send_json_error(['message' => 'Sync handler not available']);
+    }
+
+    try {
+        // Start synchronous brand sync
+        $results = $sync_handler->sync_brand_synchronously($brand_id);
+
+        // Format results for display
+        $formatted_results = [
+            'success' => $results['success'],
+            'message' => sprintf(
+                'Synchronous sync completed for brand: %s. Processed %d products (%d created, %d updated, %d errors) in %.2f seconds.',
+                $results['brand'],
+                $results['products_processed'],
+                $results['products_created'],
+                $results['products_updated'],
+                $results['errors'],
+                $results['processing_time']
+            ),
+            'data' => [
+                'brand' => $results['brand'],
+                'brand_id' => $results['brand_id'],
+                'products_processed' => $results['products_processed'],
+                'products_created' => $results['products_created'],
+                'products_updated' => $results['products_updated'],
+                'errors' => $results['errors'],
+                'error_details' => $results['error_details'],
+                'processing_time' => $results['processing_time'],
+                'timestamp' => $results['timestamp'],
+                'sync_type' => $results['sync_type']
+            ]
+        ];
+
+        wp_send_json_success($formatted_results);
+
+    } catch (Exception $e) {
+        wp_send_json_error([
+            'message' => 'Synchronous sync failed: ' . $e->getMessage(),
+            'brand_id' => $brand_id
+        ]);
+    }
 }
 
 /**

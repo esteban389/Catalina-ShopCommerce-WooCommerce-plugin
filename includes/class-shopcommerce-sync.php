@@ -750,4 +750,229 @@ class ShopCommerce_Sync {
             ];
         }
     }
+
+    /**
+     * Synchronize products for a specific brand synchronously
+     *
+     * This method processes all products for a brand immediately without batch processing,
+     * making it suitable for manual sync operations where immediate results are needed.
+     *
+     * @param int $brand_id The ID of the brand to synchronize
+     * @return array Sync results with comprehensive statistics
+     * @throws Exception If brand is not found or sync fails
+     */
+    public function sync_brand_synchronously($brand_id) {
+        $this->logger->info('Starting synchronous brand sync', ['brand_id' => $brand_id]);
+
+        $start_time = microtime(true);
+
+        try {
+            // Validate brand ID and get brand configuration
+            $brand = $this->jobs_store->get_brand($brand_id);
+            if (!$brand) {
+                throw new Exception("Brand not found: {$brand_id}");
+            }
+
+            $this->logger->info('Brand configuration found', [
+                'brand_id' => $brand_id,
+                'brand_name' => $brand->name
+            ]);
+
+            // Get brand categories
+            $categories = $this->jobs_store->get_brand_categories($brand_id);
+
+            // Handle 'all' categories logic - same as regular sync
+            if (empty($categories) || in_array('all', $categories)) {
+                $categories = [1, 7, 12, 14, 18]; // All available categories
+            }
+
+            $this->logger->info('Brand categories retrieved', [
+                'brand_id' => $brand_id,
+                'categories' => $categories,
+                'categories_count' => count($categories)
+            ]);
+
+            // Authenticate with API
+            $token = $this->api_client->get_token();
+            if (!$token) {
+                throw new Exception("API authentication failed");
+            }
+
+            $this->logger->info('API authentication successful');
+
+            // Fetch products from API for brand
+            $this->logger->info('Fetching products from API', [
+                'brand' => $brand->name,
+                'categories' => $categories
+            ]);
+
+            $api_response = $this->api_client->obtenerProductos($brand->name, $categories);
+            if (!$api_response) {
+                throw new Exception("Failed to fetch products from API for brand: {$brand->name}");
+            }
+
+            $this->logger->info('API response received', [
+                'brand' => $brand->name,
+                'response_size' => strlen($api_response)
+            ]);
+
+            // Parse XML and extract product data
+            $xml = simplexml_load_string($api_response);
+            if ($xml === false) {
+                throw new Exception("Failed to parse XML response for brand: {$brand->name}");
+            }
+
+            $products = [];
+            foreach ($xml->Producto as $product_xml) {
+                $product_data = [
+                    'sku' => (string) $product_xml->Código,
+                    'name' => (string) $product_xml->Nombre,
+                    'description' => (string) $product_xml->Descripción,
+                    'price' => (float) $product_xml->Precio,
+                    'stock' => (int) $product_xml->Stock,
+                    'brand' => (string) $product_xml->Marca,
+                    'category' => (string) $product_xml->Categoría,
+                    'images' => $this->extract_images_from_xml($product_xml->Imágenes)
+                ];
+                $products[] = $product_data;
+            }
+
+            $this->logger->info('Products parsed from XML', [
+                'brand' => $brand->name,
+                'products_count' => count($products)
+            ]);
+
+            if (empty($products)) {
+                $this->logger->info('No products found for brand', [
+                    'brand' => $brand->name
+                ]);
+
+                return [
+                    'success' => true,
+                    'brand' => $brand->name,
+                    'products_processed' => 0,
+                    'products_created' => 0,
+                    'products_updated' => 0,
+                    'errors' => 0,
+                    'processing_time' => microtime(true) - $start_time,
+                    'timestamp' => current_time('mysql')
+                ];
+            }
+
+            // Set higher execution limits for synchronous processing
+            set_time_limit(900); // 15 minutes
+            ini_set('memory_limit', '512M');
+
+            $this->logger->info('Starting synchronous product processing', [
+                'brand' => $brand->name,
+                'products_count' => count($products)
+            ]);
+
+            // Process products synchronously (no batches)
+            $results = [
+                'total' => count($products),
+                'created' => 0,
+                'updated' => 0,
+                'errors' => 0,
+                'error_details' => []
+            ];
+
+            foreach ($products as $index => $product_data) {
+                try {
+                    // Process product directly without batching
+                    $result = $this->product_handler->create_or_update_product($product_data);
+
+                    if (isset($result['created']) && $result['created']) {
+                        $results['created']++;
+                    } else {
+                        $results['updated']++;
+                    }
+
+                    // Log progress every 50 products
+                    if (($index + 1) % 50 === 0) {
+                        $this->logger->info('Synchronous sync progress', [
+                            'brand' => $brand->name,
+                            'processed' => $index + 1,
+                            'total' => count($products),
+                            'created' => $results['created'],
+                            'updated' => $results['updated'],
+                            'errors' => $results['errors']
+                        ]);
+                    }
+
+                } catch (Exception $e) {
+                    $results['errors']++;
+                    $results['error_details'][] = [
+                        'sku' => $product_data['sku'],
+                        'name' => $product_data['name'],
+                        'error' => $e->getMessage()
+                    ];
+
+                    $this->logger->warning('Failed to process product in sync', [
+                        'brand' => $brand->name,
+                        'sku' => $product_data['sku'],
+                        'error' => $e->getMessage()
+                    ]);
+
+                    // Continue processing other products even if some fail
+                    continue;
+                }
+            }
+
+            $processing_time = microtime(true) - $start_time;
+
+            $sync_results = [
+                'success' => true,
+                'brand' => $brand->name,
+                'brand_id' => $brand_id,
+                'products_processed' => $results['total'],
+                'products_created' => $results['created'],
+                'products_updated' => $results['updated'],
+                'errors' => $results['errors'],
+                'error_details' => $results['error_details'],
+                'processing_time' => $processing_time,
+                'timestamp' => current_time('mysql'),
+                'sync_type' => 'synchronous'
+            ];
+
+            $this->logger->info('Synchronous brand sync completed successfully', $sync_results);
+
+            return $sync_results;
+
+        } catch (Exception $e) {
+            $processing_time = microtime(true) - $start_time;
+
+            $this->logger->error('Synchronous brand sync failed', [
+                'brand_id' => $brand_id,
+                'error' => $e->getMessage(),
+                'processing_time' => $processing_time,
+                'trace' => $e->getTraceAsString()
+            ]);
+
+            throw $e; // Re-throw exception for caller to handle
+        }
+    }
+
+    /**
+     * Extract images from XML node
+     * Helper method for parsing product images from API response
+     *
+     * @param SimpleXMLElement $images_xml XML node containing images
+     * @return array Array of image URLs
+     */
+    private function extract_images_from_xml($images_xml) {
+        $images = [];
+
+        if ($images_xml && isset($images_xml->Imagen)) {
+            foreach ($images_xml->Imagen as $image) {
+                $image_url = (string) $image;
+                if (!empty($image_url) && filter_var($image_url, FILTER_VALIDATE_URL)) {
+                    $images[] = $image_url;
+                }
+            }
+        }
+
+        return $images;
+    }
+
 }

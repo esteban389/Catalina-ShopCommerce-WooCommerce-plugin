@@ -108,6 +108,13 @@ $current_tab = isset($_GET['tab']) ? sanitize_text_field($_GET['tab']) : 'brands
                                     </td>
                                     <td>
                                         <div class="row-actions visible">
+                                            <?php if ($brand->is_active): ?>
+                                                <button type="button" class="button-link sync-brand-btn" data-brand-id="<?php echo $brand->id; ?>" data-brand-name="<?php echo esc_attr($brand->name); ?>" title="Synchronize all products for this brand immediately">
+                                                    <span class="dashicons dashicons-update"></span>
+                                                    Sync Now
+                                                </button>
+                                                |
+                                            <?php endif; ?>
                                             <button type="button" class="button-link toggle-brand-btn" data-brand-id="<?php echo $brand->id; ?>" data-active="<?php echo $brand->is_active; ?>">
                                                 <?php echo $brand->is_active ? 'Deactivate' : 'Activate'; ?>
                                             </button>
@@ -552,6 +559,74 @@ jQuery(document).ready(function($) {
 
     
     
+    // Handle synchronous brand sync
+    $(document).on('click', '.sync-brand-btn', function(e) {
+        e.preventDefault();
+        var $btn = $(this);
+        var brandId = $btn.data('brand-id');
+        var brandName = $btn.data('brand-name');
+        var $row = $btn.closest('tr');
+
+        // Show confirmation dialog
+        if (!confirm('Are you sure you want to synchronously sync all products for "' + brandName + '"? This will process all products immediately without batching.')) {
+            return;
+        }
+
+        // Disable button and show loading state
+        $btn.prop('disabled', true).html('<span class="dashicons dashicons-spinner dashicons-spin"></span> Syncing...');
+
+        // Remove any existing status messages
+        $row.find('.sync-status').remove();
+
+        // Show syncing status
+        $row.find('td:last').append('<div class="sync-status notice notice-info"><p>Starting synchronous sync for ' + brandName + '...</p></div>');
+
+        // Make AJAX request
+        $.ajax({
+            url: shopcommerce_admin.ajax_url,
+            type: 'POST',
+            data: {
+                action: 'shopcommerce_sync_brand_synchronously',
+                nonce: shopcommerce_admin.nonce,
+                brand_id: brandId
+            },
+            success: function(response) {
+                if (response.success) {
+                    var data = response.data;
+                    var statusHtml = '<div class="sync-status notice notice-success"><p>';
+                    statusHtml += '<strong>Sync completed for ' + brandName + '</strong><br>';
+                    statusHtml += 'Products processed: ' + data.results.total + '<br>';
+                    statusHtml += 'Created: ' + data.results.created + ', Updated: ' + data.results.updated + '<br>';
+                    if (data.results.errors > 0) {
+                        statusHtml += 'Errors: ' + data.results.errors;
+                    }
+                    statusHtml += '<br>Duration: ' + data.duration + ' seconds';
+                    statusHtml += '</p></div>';
+
+                    $row.find('td:last').append(statusHtml);
+
+                    // Refresh brands list to show updated sync times
+                    setTimeout(function() {
+                        location.reload();
+                    }, 3000);
+                } else {
+                    $row.find('td:last').append('<div class="sync-status notice notice-error"><p>Error: ' + response.data + '</p></div>');
+                }
+            },
+            error: function(xhr, status, error) {
+                var errorMessage = 'Network error occurred';
+                if (xhr.responseJSON && xhr.responseJSON.data) {
+                    errorMessage = xhr.responseJSON.data;
+                }
+                $row.find('td:last').append('<div class="sync-status notice notice-error"><p>' + errorMessage + '</p></div>');
+            },
+            complete: function() {
+                // Re-enable button
+                $btn.prop('disabled', false).html('<span class="dashicons dashicons-update"></span> Sync Now');
+            }
+        });
+    });
+
     // Toggle functions
     $('.toggle-brand-btn').on('click', function() {
         var brandId = $(this).data('brand-id');

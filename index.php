@@ -55,7 +55,6 @@ function shopcommerce_sync_init()
     // Initialize central migrator first to ensure database schema is ready
     $migrator = new ShopCommerce_Migrator($logger);
     $migrator->run_migrations();
-    $GLOBALS['shopcommerce_migrator'] = $migrator;
 
     // Initialize jobs store first
     $jobs_store = new ShopCommerce_Jobs_Store($logger);
@@ -105,14 +104,6 @@ function shopcommerce_sync_activate()
     if (!file_exists(SHOPCOMMERCE_SYNC_LOGS_DIR)) {
         wp_mkdir_p(SHOPCOMMERCE_SYNC_LOGS_DIR);
     }
-
-    // Initialize migrator to ensure database schema is ready
-    if (class_exists('ShopCommerce_Migrator')) {
-        $logger = new ShopCommerce_Logger();
-        $migrator = new ShopCommerce_Migrator($logger);
-        $migrator->run_migrations();
-    }
-
     // Initialize jobs store and cron scheduler
     if (class_exists('ShopCommerce_Cron') && class_exists('ShopCommerce_Jobs_Store')) {
         $logger = new ShopCommerce_Logger();
