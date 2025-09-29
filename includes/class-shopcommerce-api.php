@@ -180,13 +180,18 @@ class ShopCommerce_API {
             $products = $response_data['listaproductos'];
         }
 
-        $this->logger->info('Catalog retrieved successfully', [
+        // Filter out products with negative quantities
+        $filtered_products = $this->filter_products_by_quantity($products);
+
+        $this->logger->info('Catalog retrieved and filtered successfully', [
             'brand' => $brand,
             'categories' => $categories,
-            'product_count' => count($products)
+            'original_count' => count($products),
+            'filtered_count' => count($filtered_products),
+            'removed_count' => count($products) - count($filtered_products)
         ]);
 
-        return $products;
+        return $filtered_products;
     }
 
     /**
@@ -495,5 +500,62 @@ class ShopCommerce_API {
 
             $this->logger->error('API request failed with status code: ' . $response_code, $error_data);
         }
+    }
+
+    /**
+     * Filter products to exclude those with negative quantities
+     *
+     * @param array $products Array of products from API
+     * @return array Filtered products with positive quantities only
+     */
+    private function filter_products_by_quantity($products) {
+        if (!is_array($products)) {
+            return [];
+        }
+
+        $filtered = [];
+        $negative_count = 0;
+
+        foreach ($products as $product) {
+            if (!is_array($product)) {
+                continue;
+            }
+
+            // Check various possible quantity field names
+            $quantity = null;
+            $quantity_fields = ['cantidad', 'quantity', 'stock', 'Cantidad', 'Quantity', 'Stock'];
+
+            foreach ($quantity_fields as $field) {
+                if (isset($product[$field])) {
+                    $quantity = $product[$field];
+                    break;
+                }
+            }
+
+            // Include product if quantity is positive or null/zero
+            if ($quantity === null || $quantity >= 0) {
+                $filtered[] = $product;
+            } else {
+                $negative_count++;
+
+                // Log details about filtered products for debugging
+                if ($negative_count <= 5) { // Log first 5 examples
+                    $this->logger->debug('Filtered out product with negative quantity', [
+                        'sku' => $product['Sku'] ?? 'unknown',
+                        'name' => $product['Name'] ?? 'unknown',
+                        'quantity' => $quantity
+                    ]);
+                }
+            }
+        }
+
+        if ($negative_count > 0) {
+            $this->logger->info('Filtered out products with negative quantities', [
+                'filtered_count' => $negative_count,
+                'remaining_count' => count($filtered)
+            ]);
+        }
+
+        return $filtered;
     }
 }
