@@ -194,6 +194,24 @@
             </key_methods>
             <dependencies>None</dependencies>
         </class>
+        <class>
+            <name>ShopCommerce_Migrator</name>
+            <file>includes/class-shopcommerce-migrator.php</file>
+            <description>Central migration manager for database schema and initialization - single source of truth for all database changes</description>
+            <global_variable>$GLOBALS['shopcommerce_migrator']</global_variable>
+            <key_methods>
+                <method>run_migrations()</method>
+                <method>create_brands_table()</method>
+                <method>create_categories_table()</method>
+                <method>create_brand_categories_table()</method>
+                <method>create_batch_queue_table()</method>
+                <method>ensure_markup_percentage_column()</method>
+                <method>initialize_default_data()</method>
+                <method>check_tables_exist()</method>
+                <method>drop_all_tables()</method>
+            </key_methods>
+            <dependencies>ShopCommerce_Logger</dependencies>
+        </class>
     </classes>
 
     <!-- Database Schema -->
@@ -214,15 +232,16 @@
             </table>
             <table>
                 <name>wp_shopcommerce_categories</name>
-                <description>Stores category mappings</description>
+                <description>Stores category mappings with markup percentages</description>
                 <fields>
-                    <field>id (INT, Primary Key)</field>
-                    <field>name (VARCHAR)</field>
-                    <field>code (INT)</field>
+                    <field>id (INT, Primary Key, Auto-increment)</field>
+                    <field>name (VARCHAR(100), Not Null)</field>
+                    <field>code (INT, Not Null, Unique)</field>
                     <field>description (TEXT)</field>
-                    <field>is_active (BOOLEAN)</field>
-                    <field>created_at (DATETIME)</field>
-                    <field>updated_at (DATETIME)</field>
+                    <field>is_active (TINYINT(1), Default: 1)</field>
+                    <field>markup_percentage (DECIMAL(5,2), Default: 15.00)</field>
+                    <field>created_at (DATETIME, Default: CURRENT_TIMESTAMP)</field>
+                    <field>updated_at (DATETIME, Default: CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP)</field>
                 </fields>
             </table>
             <table>
@@ -300,15 +319,33 @@
                     </implementation>
                 </step>
                 <step>
-                    <name>Initialize ShopCommerce_Jobs_Store</name>
+                    <name>Initialize ShopCommerce_Migrator</name>
                     <implementation>
                         <file>index.php</file>
                         <lines>93-97</lines>
                         <logic>
+                            - Create new ShopCommerce_Migrator instance with logger dependency
+                            - Run all database migrations to ensure schema is up to date
+                            - Store in global variable $GLOBALS['shopcommerce_migrator']
+                            - Serves as single source of truth for all database schema changes
+                        </logic>
+                        <code_reference>
+                            $migrator = new ShopCommerce_Migrator($GLOBALS['shopcommerce_logger']);
+                            $migrator->run_migrations();
+                            $GLOBALS['shopcommerce_migrator'] = $migrator;
+                        </code_reference>
+                    </implementation>
+                </step>
+                <step>
+                    <name>Initialize ShopCommerce_Jobs_Store</name>
+                    <implementation>
+                        <file>index.php</file>
+                        <lines>99-103</lines>
+                        <logic>
                             - Create new ShopCommerce_Jobs_Store instance with logger dependency
                             - Store in global variable $GLOBALS['shopcommerce_jobs_store']
-                            - Creates database tables if they don't exist
-                            - Initializes cache system with 5-minute TTL
+                            - Database tables are created by central migrator (not this class)
+                            - Initializes cache system with 5-minute TTL for performance
                         </logic>
                         <code_reference>
                             $GLOBALS['shopcommerce_jobs_store'] = new ShopCommerce_Jobs_Store($GLOBALS['shopcommerce_logger']);
@@ -319,12 +356,12 @@
                     <name>Initialize ShopCommerce_Config</name>
                     <implementation>
                         <file>index.php</file>
-                        <lines>99-103</lines>
+                        <lines>105-109</lines>
                         <logic>
                             - Create new ShopCommerce_Config instance with logger dependency
                             - Store in global variable $GLOBALS['shopcommerce_config']
-                            - Creates database tables if they don't exist
-                            - Initializes default configuration settings
+                            - Database tables are created by central migrator (not this class)
+                            - Uses central migrator for reset operations instead of local initialization
                         </logic>
                         <code_reference>
                             $GLOBALS['shopcommerce_config'] = new ShopCommerce_Config($GLOBALS['shopcommerce_logger']);
@@ -498,6 +535,7 @@
             <involved_classes>
                 <class>index.php</class>
                 <class>ShopCommerce_Logger</class>
+                <class>ShopCommerce_Migrator</class>
                 <class>ShopCommerce_Jobs_Store</class>
                 <class>ShopCommerce_Config</class>
                 <class>ShopCommerce_API</class>
@@ -1761,6 +1799,14 @@
                     </implementation>
                 </step>
             </steps>
+            <steps>
+                <step>Authenticate with ShopCommerce API using OAuth2</step>
+                <step>Request product catalog from API with brand and category filters</step>
+                <step>Filter out products with negative quantities</step>
+                <step>Handle API errors and retry logic</step>
+                <step>Log API communication activity</step>
+                <step>Return filtered product data</step>
+            </steps>
             <involved_classes>
                 <class>ShopCommerce_API</class>
                 <class>ShopCommerce_Logger</class>
@@ -2083,6 +2129,10 @@
             <name>Cache Management</name>
             <description>Intelligent caching for performance optimization</description>
         </feature>
+        <feature>
+            <name>Negative Quantity Filtering</name>
+            <description>Automatically filters out products with negative stock quantities from API responses</description>
+        </feature>
     </features>
 
     <!-- Security Considerations -->
@@ -2144,6 +2194,11 @@
             <path>includes/class-shopcommerce-logger.php</path>
             <type>Core Class</type>
             <description>Logging and activity tracking</description>
+        </file>
+        <file>
+            <path>includes/class-shopcommerce-migrator.php</path>
+            <type>Core Class</type>
+            <description>Central migration system for database schema management</description>
         </file>
         <file>
             <path>includes/class-shopcommerce-api.php</path>
