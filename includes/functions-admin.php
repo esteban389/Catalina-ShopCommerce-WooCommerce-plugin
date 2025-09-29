@@ -517,10 +517,82 @@ function shopcommerce_ajax_run_sync() {
  * Processes all products for a specific brand immediately without batch processing
  */
 function shopcommerce_ajax_sync_brand_synchronously() {
+    // Enable error reporting for debugging
+    error_reporting(E_ALL);
+    ini_set('display_errors', 0);
+
+    // Check if WordPress is loaded
+    if (!defined('ABSPATH')) {
+        wp_send_json_error(['message' => 'WordPress not properly loaded']);
+    }
+
     check_ajax_referer('shopcommerce_admin_nonce', 'nonce');
 
     if (!current_user_can('manage_options')) {
         wp_send_json_error(['message' => 'Insufficient permissions']);
+    }
+
+    // Initialize plugin globals if not available (for AJAX context)
+    if (!isset($GLOBALS['shopcommerce_sync'])) {
+        // Define plugin constants if not already defined
+        if (!defined('SHOPCOMMERCE_SYNC_PLUGIN_DIR')) {
+            define('SHOPCOMMERCE_SYNC_PLUGIN_DIR', dirname(dirname(__FILE__)));
+        }
+
+        if (!defined('SHOPCOMMERCE_SYNC_INCLUDES_DIR')) {
+            define('SHOPCOMMERCE_SYNC_INCLUDES_DIR', SHOPCOMMERCE_SYNC_PLUGIN_DIR . 'includes/');
+        }
+
+        if (function_exists('shopcommerce_sync_init')) {
+            shopcommerce_sync_init();
+        } else {
+            // Try to initialize the core components manually
+            try {
+                // Include only the necessary classes for brand sync
+                if (!class_exists('ShopCommerce_Logger')) {
+                    require_once SHOPCOMMERCE_SYNC_INCLUDES_DIR . 'class-shopcommerce-logger.php';
+                }
+                if (!class_exists('ShopCommerce_Migrator')) {
+                    require_once SHOPCOMMERCE_SYNC_INCLUDES_DIR . 'class-shopcommerce-migrator.php';
+                }
+                if (!class_exists('ShopCommerce_Jobs_Store')) {
+                    require_once SHOPCOMMERCE_SYNC_INCLUDES_DIR . 'class-shopcommerce-jobs-store.php';
+                }
+                if (!class_exists('ShopCommerce_API')) {
+                    require_once SHOPCOMMERCE_SYNC_INCLUDES_DIR . 'class-shopcommerce-api.php';
+                }
+                if (!class_exists('ShopCommerce_Helpers')) {
+                    require_once SHOPCOMMERCE_SYNC_INCLUDES_DIR . 'class-shopcommerce-helpers.php';
+                }
+                if (!class_exists('ShopCommerce_Product')) {
+                    require_once SHOPCOMMERCE_SYNC_INCLUDES_DIR . 'class-shopcommerce-product.php';
+                }
+                if (!class_exists('ShopCommerce_Sync')) {
+                    require_once SHOPCOMMERCE_SYNC_INCLUDES_DIR . 'class-shopcommerce-sync.php';
+                }
+
+                // Initialize components
+                $logger = new ShopCommerce_Logger();
+                $migrator = new ShopCommerce_Migrator($logger);
+                $migrator->run_migrations();
+                $jobs_store = new ShopCommerce_Jobs_Store($logger);
+                $api_client = new ShopCommerce_API($logger);
+                $helpers = new ShopCommerce_Helpers($logger);
+                $product_handler = new ShopCommerce_Product($logger, $helpers);
+                $sync_handler = new ShopCommerce_Sync($logger, $api_client, $product_handler, null, $jobs_store);
+
+                // Make instances available globally
+                $GLOBALS['shopcommerce_logger'] = $logger;
+                $GLOBALS['shopcommerce_jobs_store'] = $jobs_store;
+                $GLOBALS['shopcommerce_api'] = $api_client;
+                $GLOBALS['shopcommerce_helpers'] = $helpers;
+                $GLOBALS['shopcommerce_product'] = $product_handler;
+                $GLOBALS['shopcommerce_sync'] = $sync_handler;
+
+            } catch (Exception $e) {
+                wp_send_json_error(['message' => 'Failed to initialize plugin components: ' . $e->getMessage(), 'trace' => $e->getTraceAsString()]);
+            }
+        }
     }
 
     $brand_id = isset($_POST['brand_id']) ? intval($_POST['brand_id']) : 0;
@@ -530,10 +602,23 @@ function shopcommerce_ajax_sync_brand_synchronously() {
 
     $sync_handler = isset($GLOBALS['shopcommerce_sync']) ? $GLOBALS['shopcommerce_sync'] : null;
     if (!$sync_handler) {
-        wp_send_json_error(['message' => 'Sync handler not available']);
+        // Debug: Check what globals are available
+        $available_globals = [];
+        foreach ($GLOBALS as $key => $value) {
+            if (strpos($key, 'shopcommerce') === 0) {
+                $available_globals[] = $key;
+            }
+        }
+        wp_send_json_error(['message' => 'Sync handler not available', 'available_shopcommerce_globals' => $available_globals]);
     }
 
     try {
+        // Test database connection first
+        global $wpdb;
+        if (!$wpdb) {
+            wp_send_json_error(['message' => 'Database connection not available']);
+        }
+
         // Start synchronous brand sync
         $results = $sync_handler->sync_brand_synchronously($brand_id);
 
@@ -568,7 +653,8 @@ function shopcommerce_ajax_sync_brand_synchronously() {
     } catch (Exception $e) {
         wp_send_json_error([
             'message' => 'Synchronous sync failed: ' . $e->getMessage(),
-            'brand_id' => $brand_id
+            'brand_id' => $brand_id,
+            'trace' => $e->getTraceAsString()
         ]);
     }
 }

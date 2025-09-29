@@ -109,7 +109,7 @@ $current_tab = isset($_GET['tab']) ? sanitize_text_field($_GET['tab']) : 'brands
                                     <td>
                                         <div class="row-actions visible">
                                             <?php if ($brand->is_active): ?>
-                                                <button type="button" class="button-link sync-brand-btn" data-brand-id="<?php echo $brand->id; ?>" data-brand-name="<?php echo esc_attr($brand->name); ?>" title="Synchronize all products for this brand immediately">
+                                                <button type="button" class="button sync-brand-btn" data-brand-id="<?php echo $brand->id; ?>" data-brand-name="<?php echo esc_attr($brand->name); ?>" title="Synchronize all products for this brand immediately">
                                                     <span class="dashicons dashicons-update"></span>
                                                     Sync Now
                                                 </button>
@@ -489,6 +489,16 @@ $current_tab = isset($_GET['tab']) ? sanitize_text_field($_GET['tab']) : 'brands
     color: #005a87;
 }
 
+.sync-brand-btn.button {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 12px;
+    height: auto;
+    padding: 2px 8px;
+    line-height: 1.4;
+}
+
 /* Responsive */
 @media (max-width: 782px) {
     .section-header {
@@ -595,12 +605,12 @@ jQuery(document).ready(function($) {
                     var data = response.data;
                     var statusHtml = '<div class="sync-status notice notice-success"><p>';
                     statusHtml += '<strong>Sync completed for ' + brandName + '</strong><br>';
-                    statusHtml += 'Products processed: ' + data.results.total + '<br>';
-                    statusHtml += 'Created: ' + data.results.created + ', Updated: ' + data.results.updated + '<br>';
-                    if (data.results.errors > 0) {
-                        statusHtml += 'Errors: ' + data.results.errors;
+                    statusHtml += 'Products processed: ' + data.products_processed + '<br>';
+                    statusHtml += 'Created: ' + data.products_created + ', Updated: ' + data.products_updated + '<br>';
+                    if (data.errors > 0) {
+                        statusHtml += 'Errors: ' + data.errors;
                     }
-                    statusHtml += '<br>Duration: ' + data.duration + ' seconds';
+                    statusHtml += '<br>Duration: ' + data.processing_time + ' seconds';
                     statusHtml += '</p></div>';
 
                     $row.find('td:last').append(statusHtml);

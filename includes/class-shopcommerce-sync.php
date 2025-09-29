@@ -806,38 +806,18 @@ class ShopCommerce_Sync {
                 'categories' => $categories
             ]);
 
-            $api_response = $this->api_client->obtenerProductos($brand->name, $categories);
-            if (!$api_response) {
+            $categories = array_column($categories, 'code');
+            $products = $this->api_client->get_catalog($brand->name, $categories);
+            if (!$products) {
                 throw new Exception("Failed to fetch products from API for brand: {$brand->name}");
             }
 
             $this->logger->info('API response received', [
                 'brand' => $brand->name,
-                'response_size' => strlen($api_response)
+                'products_count' => count($products)
             ]);
 
-            // Parse XML and extract product data
-            $xml = simplexml_load_string($api_response);
-            if ($xml === false) {
-                throw new Exception("Failed to parse XML response for brand: {$brand->name}");
-            }
-
-            $products = [];
-            foreach ($xml->Producto as $product_xml) {
-                $product_data = [
-                    'sku' => (string) $product_xml->Código,
-                    'name' => (string) $product_xml->Nombre,
-                    'description' => (string) $product_xml->Descripción,
-                    'price' => (float) $product_xml->Precio,
-                    'stock' => (int) $product_xml->Stock,
-                    'brand' => (string) $product_xml->Marca,
-                    'category' => (string) $product_xml->Categoría,
-                    'images' => $this->extract_images_from_xml($product_xml->Imágenes)
-                ];
-                $products[] = $product_data;
-            }
-
-            $this->logger->info('Products parsed from XML', [
+            $this->logger->info('Products parsed from API response', [
                 'brand' => $brand->name,
                 'products_count' => count($products)
             ]);
@@ -880,7 +860,7 @@ class ShopCommerce_Sync {
             foreach ($products as $index => $product_data) {
                 try {
                     // Process product directly without batching
-                    $result = $this->product_handler->create_or_update_product($product_data);
+                    $result = $this->product_handler->process_product($product_data, $brand->name);
 
                     if (isset($result['created']) && $result['created']) {
                         $results['created']++;
@@ -954,19 +934,18 @@ class ShopCommerce_Sync {
     }
 
     /**
-     * Extract images from XML node
+     * Extract images from API response
      * Helper method for parsing product images from API response
      *
-     * @param SimpleXMLElement $images_xml XML node containing images
-     * @return array Array of image URLs
+     * @param array $images_array Array of image URLs from API
+     * @return array Array of valid image URLs
      */
-    private function extract_images_from_xml($images_xml) {
+    private function extract_images_from_api($images_array) {
         $images = [];
 
-        if ($images_xml && isset($images_xml->Imagen)) {
-            foreach ($images_xml->Imagen as $image) {
-                $image_url = (string) $image;
-                if (!empty($image_url) && filter_var($image_url, FILTER_VALIDATE_URL)) {
+        if (is_array($images_array)) {
+            foreach ($images_array as $image_url) {
+                if (!empty($image_url) && is_string($image_url) && filter_var($image_url, FILTER_VALIDATE_URL)) {
                     $images[] = $image_url;
                 }
             }

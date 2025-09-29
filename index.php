@@ -3,7 +3,7 @@
 /**
  * Plugin Name:       ShopCommerce Product Sync Plugin
  * Description:       A plugin to sync products from ShopCommerce with WooCommerce, specially for Hekalsoluciones.
- * Version:           2.5.0
+ * Version:           1.0.0
  * Author:            Esteban Andres Murcia Acuña
  * Author URI:        https://estebanmurcia.dev/
  * License:           GPL-2.0+
