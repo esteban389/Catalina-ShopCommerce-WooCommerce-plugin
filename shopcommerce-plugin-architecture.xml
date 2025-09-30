@@ -18,8 +18,35 @@
     <!-- -->
     <!-- This ensures the architecture documentation always matches the actual codebase -->
 
-    <!-- Recent Changes (v2.6.0) -->
+    <!-- Recent Changes (v2.7.0) -->
     <recent_changes>
+        <change>
+            <date>2025-01-30</date>
+            <description>Added comprehensive brand categories management modal interface</description>
+            <details>
+                - Implemented clickable categories cells in brands table
+                - Created interactive modal for editing brand categories
+                - Added category selection grid with checkboxes
+                - Implemented "Select All" and "Deselect All" functionality
+                - Added AJAX endpoints for brand categories CRUD operations
+                - Enhanced visual design with hover effects and animations
+                - Added proper error handling and user feedback
+                - Removed "Add New Brand" button from brands page as requested
+            </details>
+        </change>
+        <change>
+            <date>2025-01-30</date>
+            <description>Implemented inline editing for category markup percentages</description>
+            <details>
+                - Added clickable markup cells with inline editing interface
+                - Created save and cancel buttons with keyboard shortcuts
+                - Added update_category_markup() method to ShopCommerce_Config class
+                - Created shopcommerce_category_markups database table
+                - Implemented AJAX endpoint for markup updates
+                - Enhanced visual styling with interactive hover effects
+                - Added proper validation and error handling
+            </details>
+        </change>
         <change>
             <date>2025-01-29</date>
             <description>Added synchronous brand sync functionality</description>
@@ -45,7 +72,7 @@
     <!-- Plugin Overview -->
     <plugin_info>
         <name>ShopCommerce Product Sync Plugin</name>
-        <version>2.6.0</version>
+        <version>2.7.0</version>
         <description>WordPress plugin for synchronizing products from external ShopCommerce API with WooCommerce</description>
         <author>Hekalsoluciones</author>
         <compatibility>
@@ -162,7 +189,7 @@
         <class>
             <name>ShopCommerce_Config</name>
             <file>includes/class-shopcommerce-config.php</file>
-            <description>Dynamic configuration management with database storage, API brand creation, and reset functionality</description>
+            <description>Dynamic configuration management with database storage, API brand creation, category markup management, and reset functionality</description>
             <global_variable>$GLOBALS['shopcommerce_config']</global_variable>
             <key_methods>
                 <method>get_setting()</method>
@@ -171,6 +198,10 @@
                 <method>create_brand_from_api()</method>
                 <method>reset_configuration()</method>
                 <method>get_category_markup()</method>
+                <method>update_category_markup()</method>
+                <method>create_markup_table()</method>
+                <method>get_brand_categories()</method>
+                <method>update_brand_categories()</method>
             </key_methods>
             <dependencies>ShopCommerce_Logger, ShopCommerce_API</dependencies>
         </class>
@@ -278,6 +309,21 @@
                     <field>category_id (INT, Foreign Key)</field>
                     <field>created_at (DATETIME)</field>
                 </fields>
+            </table>
+            <table>
+                <name>wp_shopcommerce_category_markups</name>
+                <description>Stores markup percentages for categories</description>
+                <fields>
+                    <field>id (INT, Primary Key, Auto-increment)</field>
+                    <field>category_code (VARCHAR(50), Not Null, Unique)</field>
+                    <field>markup_percentage (DECIMAL(5,2), Not Null, Default: 0.00)</field>
+                    <field>created_at (DATETIME, Default: CURRENT_TIMESTAMP)</field>
+                    <field>updated_at (DATETIME, Default: CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP)</field>
+                </fields>
+                <indexes>
+                    <index>unique_category_code (category_code)</index>
+                    <index>idx_category_code (category_code)</index>
+                </indexes>
             </table>
             <table>
                 <name>wp_shopcommerce_batch_queue</name>
@@ -1994,6 +2040,74 @@
         </flow>
     </flows>
 
+    <!-- AJAX Endpoints -->
+    <ajax_endpoints>
+        <endpoint>
+            <name>shopcommerce_update_category_markup</name>
+            <handler>shopcommerce_ajax_update_category_markup</handler>
+            <file>includes/functions-admin.php</file>
+            <method>POST</method>
+            <description>Updates markup percentage for a specific category</description>
+            <parameters>
+                <param name="nonce" type="string" required="true">Security nonce</param>
+                <param name="category_id" type="int" required="true">Category ID</param>
+                <param name="category_code" type="string" required="true">Category code</param>
+                <param name="markup_percentage" type="float" required="true">New markup percentage (0-100)</param>
+            </parameters>
+            <response>{"success": true, "message": "Markup percentage updated successfully", "new_markup": 15.0}</response>
+        </endpoint>
+        <endpoint>
+            <name>shopcommerce_get_brand_categories</name>
+            <handler>shopcommerce_ajax_get_brand_categories</handler>
+            <file>includes/functions-admin.php</file>
+            <method>POST</method>
+            <description>Retrieves current categories for a specific brand</description>
+            <parameters>
+                <param name="nonce" type="string" required="true">Security nonce</param>
+                <param name="brand_id" type="int" required="true">Brand ID</param>
+            </parameters>
+            <response>{"success": true, "categories": [1, 7, 12], "brand_id": 5}</response>
+        </endpoint>
+        <endpoint>
+            <name>shopcommerce_update_brand_categories</name>
+            <handler>shopcommerce_ajax_update_brand_categories</handler>
+            <file>includes/functions-admin.php</file>
+            <method>POST</method>
+            <description>Updates categories for a specific brand</description>
+            <parameters>
+                <param name="nonce" type="string" required="true">Security nonce</param>
+                <param name="brand_id" type="int" required="true">Brand ID</param>
+                <param name="categories" type="array" required="true">Array of category IDs</param>
+            </parameters>
+            <response>{"success": true, "message": "Brand categories updated successfully", "category_count": 3}</response>
+        </endpoint>
+        <endpoint>
+            <name>shopcommerce_sync_brand_synchronously</name>
+            <handler>shopcommerce_ajax_sync_brand_synchronously</handler>
+            <file>includes/functions-admin.php</file>
+            <method>POST</method>
+            <description>Executes synchronous product sync for a specific brand</description>
+            <parameters>
+                <param name="nonce" type="string" required="true">Security nonce</param>
+                <param name="brand_id" type="int" required="true">Brand ID</param>
+                <param name="brand_name" type="string" required="true">Brand name</param>
+            </parameters>
+            <response>{"success": true, "products_processed": 150, "products_created": 25, "products_updated": 125}</response>
+        </endpoint>
+        <endpoint>
+            <name>shopcommerce_ajax</name>
+            <handler>shopcommerce_ajax_handler</handler>
+            <file>includes/functions-admin.php</file>
+            <method>POST</method>
+            <description>General AJAX handler for multiple admin operations</description>
+            <parameters>
+                <param name="nonce" type="string" required="true">Security nonce</param>
+                <param name="action" type="string" required="true">Specific action to perform</param>
+            </parameters>
+            <response>{"success": true, "message": "Operation completed successfully"}</response>
+        </endpoint>
+    </ajax_endpoints>
+
     <!-- Dependencies and Integrations -->
     <dependencies>
         <!-- WordPress Core Dependencies -->
@@ -2055,6 +2169,7 @@
                 <table>wp_shopcommerce_brands</table>
                 <table>wp_shopcommerce_categories</table>
                 <table>wp_shopcommerce_brand_categories</table>
+                <table>wp_shopcommerce_category_markups</table>
                 <table>wp_shopcommerce_batch_queue</table>
             </tables>
             <usage>Brand/category management, batch processing queue</usage>
