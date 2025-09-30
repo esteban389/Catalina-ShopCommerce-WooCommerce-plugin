@@ -17,10 +17,35 @@
     <!-- 4. Update XML file again to reflect final implementation -->
     <!-- -->
     <!-- This ensures the architecture documentation always matches the actual codebase -->
+
+    <!-- Recent Changes (v2.6.0) -->
+    <recent_changes>
+        <change>
+            <date>2025-01-29</date>
+            <description>Added synchronous brand sync functionality</description>
+            <details>
+                - Implemented AJAX endpoint for manual brand synchronization
+                - Added "Sync Now" button to brands management interface
+                - Enhanced error handling and logging for sync operations
+                - Fixed API response parsing to handle JSON format correctly
+            </details>
+        </change>
+        <change>
+            <date>2025-01-29</date>
+            <description>Enhanced brands and categories management interface</description>
+            <details>
+                - Organized brands and categories by active status first
+                - Added markup percentage column to categories table
+                - Added get_category_markup() method to ShopCommerce_Config class
+                - Improved admin interface usability and organization
+            </details>
+        </change>
+    </recent_changes>
+
     <!-- Plugin Overview -->
     <plugin_info>
         <name>ShopCommerce Product Sync Plugin</name>
-        <version>2.5.0</version>
+        <version>2.6.0</version>
         <description>WordPress plugin for synchronizing products from external ShopCommerce API with WooCommerce</description>
         <author>Hekalsoluciones</author>
         <compatibility>
@@ -145,6 +170,7 @@
                 <method>build_jobs_list()</method>
                 <method>create_brand_from_api()</method>
                 <method>reset_configuration()</method>
+                <method>get_category_markup()</method>
             </key_methods>
             <dependencies>ShopCommerce_Logger, ShopCommerce_API</dependencies>
         </class>
@@ -1923,6 +1949,48 @@
                 <class>ShopCommerce_Cron</class>
                 <class>ShopCommerce_Logger</class>
             </involved_classes>
+        </flow>
+
+        <!-- Synchronous Brand Sync Flow -->
+        <flow>
+            <name>Synchronous Brand Sync</name>
+            <description>Manual synchronization of products for a specific brand triggered from admin interface</description>
+            <trigger>Admin clicks "Sync Now" button on brands management page</trigger>
+            <steps>
+                <step>User clicks "Sync Now" button for a specific brand</step>
+                <step>JavaScript sends AJAX request to shopcommerce_sync_brand_synchronously endpoint</step>
+                <step>Server validates nonce and user permissions</step>
+                <step>Initialize plugin components if not available (AJAX context)</step>
+                <step>Call ShopCommerce_Sync::sync_brand_synchronously() method</step>
+                <step>Validate brand ID and get brand configuration from database</step>
+                <step>Retrieve brand categories (handle "all categories" logic)</step>
+                <step>Authenticate with ShopCommerce API using OAuth2</step>
+                <step>Fetch product catalog from API using get_catalog() method</step>
+                <step>Parse JSON response and extract product data</step>
+                <step>Process each product synchronously (create/update in WooCommerce)</step>
+                <step>Track progress and log results</step>
+                <step>Return comprehensive results to frontend</step>
+                <step>Update UI with sync results and statistics</step>
+            </steps>
+            <key_methods>
+                <method>shopcommerce_ajax_sync_brand_synchronously()</method>
+                <method>ShopCommerce_Sync::sync_brand_synchronously()</method>
+                <method>ShopCommerce_API::get_catalog()</method>
+                <method>ShopCommerce_Product::create_or_update_product()</method>
+            </key_methods>
+            <involved_classes>
+                <class>functions-admin.php</class>
+                <class>ShopCommerce_Sync</class>
+                <class>ShopCommerce_API</class>
+                <class>ShopCommerce_Product</class>
+                <class>ShopCommerce_Jobs_Store</class>
+                <class>ShopCommerce_Logger</class>
+            </involved_classes>
+            <ui_elements>
+                <element>Sync Now button in brands table</element>
+                <element>AJAX loading indicator</element>
+                <element>Results modal with sync statistics</element>
+            </ui_elements>
         </flow>
     </flows>
 

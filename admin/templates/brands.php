@@ -17,10 +17,40 @@ $helpers = isset($GLOBALS['shopcommerce_helpers']) ? $GLOBALS['shopcommerce_help
 $logger = isset($GLOBALS['shopcommerce_logger']) ? $GLOBALS['shopcommerce_logger'] : null;
 
 // Get data - use jobs store if available, fallback to config
-$brands = $jobs_store ? $jobs_store->get_brands(false) : ($config ? $config->get_brands(false) : []);
+$all_brands = $jobs_store ? $jobs_store->get_brands(false) : ($config ? $config->get_brands(false) : []);
 $categories = $jobs_store ? $jobs_store->get_categories(false) : ($config ? $config->get_categories(false) : []);
 $active_brands = $jobs_store ? $jobs_store->get_brands(true) : ($config ? $config->get_brands(true) : []);
 $active_categories = $jobs_store ? $jobs_store->get_categories(true) : ($config ? $config->get_categories(true) : []);
+
+// Organize brands by active status first
+$brands = [];
+$inactive_brands = [];
+
+foreach ($all_brands as $brand) {
+    if ($brand->is_active) {
+        $brands[] = $brand;
+    } else {
+        $inactive_brands[] = $brand;
+    }
+}
+
+// Merge active brands first, then inactive
+$brands = array_merge($brands, $inactive_brands);
+
+// Organize categories by active status first
+$organized_categories = [];
+$inactive_categories = [];
+
+foreach ($categories as $category) {
+    if ($category->is_active) {
+        $organized_categories[] = $category;
+    } else {
+        $inactive_categories[] = $category;
+    }
+}
+
+// Merge active categories first, then inactive
+$categories = array_merge($organized_categories, $inactive_categories);
 
 // Get current tab
 $current_tab = isset($_GET['tab']) ? sanitize_text_field($_GET['tab']) : 'brands';
@@ -159,6 +189,7 @@ $current_tab = isset($_GET['tab']) ? sanitize_text_field($_GET['tab']) : 'brands
                                 <th scope="col" class="manage-column column-code">Code</th>
                                 <th scope="col" class="manage-column column-name">Name</th>
                                 <th scope="col" class="manage-column column-description">Description</th>
+                                <th scope="col" class="manage-column column-markup">Markup %</th>
                                 <th scope="col" class="manage-column column-status">Status</th>
                                 <th scope="col" class="manage-column column-actions">Actions</th>
                             </tr>
@@ -174,6 +205,18 @@ $current_tab = isset($_GET['tab']) ? sanitize_text_field($_GET['tab']) : 'brands
                                         <strong><?php echo esc_html($category->name); ?></strong>
                                     </td>
                                     <td><?php echo esc_html($category->description); ?></td>
+                                    <td>
+                                        <?php
+                                        // Get markup percentage for this category
+                                        $markup_percentage = 0;
+
+                                        if ($config && method_exists($config, 'get_category_markup')) {
+                                            $markup_percentage = $config->get_category_markup($category->code);
+                                        }
+
+                                        echo $markup_percentage > 0 ? number_format($markup_percentage, 1) . '%' : 'Default';
+                                        ?>
+                                    </td>
                                     <td>
                                         <span class="status-badge <?php echo $category->is_active ? 'status-active' : 'status-inactive'; ?>">
                                             <?php echo $category->is_active ? 'Active' : 'Inactive'; ?>

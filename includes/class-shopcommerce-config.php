@@ -700,4 +700,23 @@ class ShopCommerce_Config {
             return false;
         }
     }
+
+    /**
+     * Get markup percentage for a specific category
+     *
+     * @param string $category_code Category code
+     * @return float Markup percentage
+     */
+    public function get_category_markup($category_code) {
+        global $wpdb;
+
+        $markup_table = $wpdb->prefix . 'shopcommerce_category_markup';
+
+        $result = $wpdb->get_var($wpdb->prepare(
+            "SELECT markup_percentage FROM {$markup_table} WHERE category_code = %s",
+            $category_code
+        ));
+
+        return $result !== null ? floatval($result) : 0.0;
+    }
 }
