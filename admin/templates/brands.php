@@ -206,16 +206,32 @@ $current_tab = isset($_GET['tab']) ? sanitize_text_field($_GET['tab']) : 'brands
                                     </td>
                                     <td><?php echo esc_html($category->description); ?></td>
                                     <td>
-                                        <?php
-                                        // Get markup percentage for this category
-                                        $markup_percentage = 0;
+                                        <div class="markup-cell" data-category-id="<?php echo $category->id; ?>" data-category-code="<?php echo esc_attr($category->code); ?>">
+                                            <span class="markup-value">
+                                                <?php
+                                                // Get markup percentage for this category
+                                                $markup_percentage = 0;
 
-                                        if ($config && method_exists($config, 'get_category_markup')) {
-                                            $markup_percentage = $config->get_category_markup($category->code);
-                                        }
+                                                if ($config && method_exists($config, 'get_category_markup')) {
+                                                    $markup_percentage = $config->get_category_markup($category->code);
+                                                }
 
-                                        echo $markup_percentage > 0 ? number_format($markup_percentage, 1) . '%' : 'Default';
-                                        ?>
+                                                echo $markup_percentage > 0 ? number_format($markup_percentage, 1) . '%' : 'Default';
+                                                ?>
+                                            </span>
+                                            <div class="markup-edit" style="display: none;">
+                                                <input type="number" class="markup-input" step="0.1" min="0" max="100" placeholder="0.0">
+                                                <span class="markup-percent">%</span>
+                                                <div class="markup-actions">
+                                                    <button type="button" class="button button-small button-primary save-markup-btn">
+                                                        <span class="dashicons dashicons-yes"></span>
+                                                    </button>
+                                                    <button type="button" class="button button-small cancel-markup-btn">
+                                                        <span class="dashicons dashicons-no"></span>
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </div>
                                     </td>
                                     <td>
                                         <span class="status-badge <?php echo $category->is_active ? 'status-active' : 'status-inactive'; ?>">
@@ -584,6 +600,121 @@ $current_tab = isset($_GET['tab']) ? sanitize_text_field($_GET['tab']) : 'brands
         transform: rotate(360deg);
     }
 }
+
+/* Markup Editing Styles */
+.markup-cell {
+    position: relative;
+}
+
+.markup-value {
+    cursor: pointer;
+    padding: 6px 12px;
+    border-radius: 4px;
+    transition: all 0.2s ease;
+    display: inline-block;
+    min-width: 70px;
+    text-align: center;
+    font-weight: 600;
+    border: 1px solid #ddd;
+    background: #f9f9f9;
+    position: relative;
+}
+
+.markup-value:hover {
+    background-color: #e7f3ff;
+    color: #0073aa;
+    border-color: #0073aa;
+    transform: translateY(-1px);
+    box-shadow: 0 2px 4px rgba(0, 115, 170, 0.2);
+}
+
+.markup-value::after {
+    content: "✏️";
+    position: absolute;
+    right: 4px;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 11px;
+    opacity: 0;
+    transition: opacity 0.2s ease;
+}
+
+.markup-value:hover::after {
+    opacity: 1;
+}
+
+.markup-edit {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex-wrap: wrap;
+    max-width: 150px;
+}
+
+.markup-input {
+    width: 60px !important;
+    padding: 2px 4px !important;
+    border: 1px solid #8c8f94 !important;
+    border-radius: 3px !important;
+    font-size: 12px !important;
+    text-align: center;
+}
+
+.markup-input:focus {
+    border-color: #0073aa !important;
+    box-shadow: 0 0 0 2px rgba(0, 115, 170, 0.25) !important;
+    outline: none;
+}
+
+.markup-percent {
+    font-size: 12px;
+    color: #50575e;
+    font-weight: 600;
+}
+
+.markup-actions {
+    display: flex;
+    gap: 2px;
+    margin-left: 4px;
+}
+
+.markup-actions .button {
+    padding: 2px 6px !important;
+    height: auto !important;
+    line-height: 1 !important;
+    font-size: 12px !important;
+    min-width: auto !important;
+    border-radius: 3px !important;
+}
+
+.markup-actions .button .dashicons {
+    font-size: 14px !important;
+    line-height: 14px !important;
+    width: 14px !important;
+    height: 14px !important;
+}
+
+.markup-actions .button-primary {
+    background: #0073aa;
+    border-color: #0073aa;
+}
+
+.markup-actions .button-primary:hover {
+    background: #005a87;
+    border-color: #005a87;
+}
+
+.markup-actions .button-small {
+    background: #f0f0f1;
+    border-color: #8c8f94;
+    color: #50575e;
+}
+
+.markup-actions .button-small:hover {
+    background: #e0e0e1;
+    border-color: #666;
+    color: #32373c;
+}
 </style>
 
 <script type="text/javascript">
@@ -893,6 +1024,110 @@ jQuery(document).ready(function($) {
                     $spinner.hide();
                 }
             });
+        }
+    });
+
+    // Markup percentage inline editing
+    $('.markup-value').on('click', function() {
+        var $cell = $(this).closest('.markup-cell');
+        var $valueSpan = $(this);
+        var $editDiv = $cell.find('.markup-edit');
+        var $input = $cell.find('.markup-input');
+
+        // Get current value
+        var currentValue = $valueSpan.text().trim();
+        var numericValue = currentValue === 'Default' ? '' : parseFloat(currentValue.replace('%', ''));
+
+        // Set input value
+        $input.val(numericValue);
+
+        // Toggle display
+        $valueSpan.hide();
+        $editDiv.show();
+
+        // Focus and select input
+        $input.focus();
+        $input.select();
+    });
+
+    $('.save-markup-btn').on('click', function() {
+        var $cell = $(this).closest('.markup-cell');
+        var $input = $cell.find('.markup-input');
+        var $valueSpan = $cell.find('.markup-value');
+        var categoryId = $cell.data('category-id');
+        var categoryCode = $cell.data('category-code');
+        var newMarkup = parseFloat($input.val()) || 0;
+
+        // Validate input
+        if (newMarkup < 0 || newMarkup > 100) {
+            alert('Markup percentage must be between 0 and 100');
+            $input.focus();
+            return;
+        }
+
+        var $btn = $(this);
+        var originalText = $btn.html();
+        $btn.prop('disabled', true).html('<span class="dashicons dashicons-spinner"></span>');
+
+        // Send AJAX request to update markup
+        $.ajax({
+            url: ajaxurl,
+            type: 'POST',
+            data: {
+                action: 'shopcommerce_update_category_markup',
+                nonce: shopcommerce_admin.nonce,
+                category_id: categoryId,
+                category_code: categoryCode,
+                markup_percentage: newMarkup
+            },
+            success: function(response) {
+                if (response.success) {
+                    // Update display
+                    var displayValue = newMarkup > 0 ? newMarkup.toFixed(1) + '%' : 'Default';
+                    $valueSpan.text(displayValue);
+
+                    // Hide edit, show value
+                    $cell.find('.markup-edit').hide();
+                    $valueSpan.show();
+
+                    // Show success message
+                    showNotice('Markup percentage updated successfully', 'success');
+                } else {
+                    alert('Error: ' + response.data.message);
+                }
+            },
+            error: function() {
+                alert('Network error occurred while updating markup.');
+            },
+            complete: function() {
+                $btn.prop('disabled', false).html(originalText);
+            }
+        });
+    });
+
+    $('.cancel-markup-btn').on('click', function() {
+        var $cell = $(this).closest('.markup-cell');
+        var $valueSpan = $cell.find('.markup-value');
+        var $editDiv = $cell.find('.markup-edit');
+
+        // Hide edit, show value
+        $editDiv.hide();
+        $valueSpan.show();
+    });
+
+    // Handle Enter key in input
+    $(document).on('keypress', '.markup-input', function(e) {
+        if (e.which === 13) { // Enter key
+            $(this).closest('.markup-cell').find('.save-markup-btn').click();
+            e.preventDefault();
+        }
+    });
+
+    // Handle Escape key in input
+    $(document).on('keydown', '.markup-input', function(e) {
+        if (e.which === 27) { // Escape key
+            $(this).closest('.markup-cell').find('.cancel-markup-btn').click();
+            e.preventDefault();
         }
     });
 });

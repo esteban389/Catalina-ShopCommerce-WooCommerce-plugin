@@ -21,6 +21,7 @@ class ShopCommerce_Config {
     private $brands_table;
     private $categories_table;
     private $brand_categories_table;
+    private $markup_table;
 
     /**
      * Constructor
@@ -34,12 +35,48 @@ class ShopCommerce_Config {
         $this->brands_table = $wpdb->prefix . 'shopcommerce_brands';
         $this->categories_table = $wpdb->prefix . 'shopcommerce_categories';
         $this->brand_categories_table = $wpdb->prefix . 'shopcommerce_brand_categories';
+        $this->markup_table = $wpdb->prefix . 'shopcommerce_category_markup';
 
-        // Tables are now created by the central migrator
+        // Create markup table if it doesn't exist
+        $this->create_markup_table();
     }
 
-  
-  
+    /**
+     * Create the category markup table if it doesn't exist
+     */
+    private function create_markup_table() {
+        global $wpdb;
+
+        $table_name = $this->markup_table;
+
+        // Check if table already exists
+        $table_exists = $wpdb->get_var("SHOW TABLES LIKE '$table_name'");
+
+        if (!$table_exists) {
+            $charset_collate = $wpdb->get_charset_collate();
+
+            $sql = "CREATE TABLE $table_name (
+                id int(11) NOT NULL AUTO_INCREMENT,
+                category_code varchar(50) NOT NULL,
+                markup_percentage decimal(5,2) NOT NULL DEFAULT 0.00,
+                created_at datetime DEFAULT CURRENT_TIMESTAMP,
+                updated_at datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                PRIMARY KEY (id),
+                UNIQUE KEY unique_category_code (category_code),
+                KEY idx_category_code (category_code)
+            ) $charset_collate;";
+
+            require_once(ABSPATH . 'wp-admin/includes/upgrade.php');
+            dbDelta($sql);
+
+            if ($this->logger) {
+                $this->logger->info('Category markup table created', ['table' => $table_name]);
+            }
+        }
+    }
+
+
+
     /**
      * Get all brands
      *
@@ -710,7 +747,7 @@ class ShopCommerce_Config {
     public function get_category_markup($category_code) {
         global $wpdb;
 
-        $markup_table = $wpdb->prefix . 'shopcommerce_category_markup';
+        $markup_table = $this->markup_table;
 
         $result = $wpdb->get_var($wpdb->prepare(
             "SELECT markup_percentage FROM {$markup_table} WHERE category_code = %s",
@@ -718,5 +755,70 @@ class ShopCommerce_Config {
         ));
 
         return $result !== null ? floatval($result) : 0.0;
+    }
+
+    /**
+     * Update markup percentage for a specific category
+     *
+     * @param string $category_code Category code
+     * @param float $markup_percentage New markup percentage
+     * @return bool Success status
+     */
+    public function update_category_markup($category_code, $markup_percentage) {
+        global $wpdb;
+
+        $markup_table = $this->markup_table;
+
+        // Validate input
+        if (!is_numeric($markup_percentage) || $markup_percentage < 0 || $markup_percentage > 100) {
+            $this->logger->error('Invalid markup percentage provided', [
+                'category_code' => $category_code,
+                'markup_percentage' => $markup_percentage
+            ]);
+            return false;
+        }
+
+        // Check if record exists
+        $existing = $wpdb->get_var($wpdb->prepare(
+            "SELECT COUNT(*) FROM {$markup_table} WHERE category_code = %s",
+            $category_code
+        ));
+
+        if ($existing) {
+            // Update existing record
+            $result = $wpdb->update(
+                $markup_table,
+                ['markup_percentage' => $markup_percentage],
+                ['category_code' => $category_code],
+                ['%f'],
+                ['%s']
+            );
+        } else {
+            // Insert new record
+            $result = $wpdb->insert(
+                $markup_table,
+                [
+                    'category_code' => $category_code,
+                    'markup_percentage' => $markup_percentage,
+                    'created_at' => current_time('mysql')
+                ],
+                ['%s', '%f', '%s']
+            );
+        }
+
+        if ($result !== false) {
+            $this->logger->info('Category markup updated successfully', [
+                'category_code' => $category_code,
+                'markup_percentage' => $markup_percentage
+            ]);
+            return true;
+        } else {
+            $this->logger->error('Failed to update category markup', [
+                'category_code' => $category_code,
+                'markup_percentage' => $markup_percentage,
+                'wpdb_error' => $wpdb->last_error
+            ]);
+            return false;
+        }
     }
 }

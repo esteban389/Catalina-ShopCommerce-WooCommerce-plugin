@@ -449,6 +449,9 @@ function shopcommerce_register_ajax_handlers() {
     // Categories management from API
     add_action('wp_ajax_shopcommerce_sync_categories', 'shopcommerce_ajax_sync_categories');
 
+    // Update category markup
+    add_action('wp_ajax_shopcommerce_update_category_markup', 'shopcommerce_ajax_update_category_markup');
+
     // Batch processing
     add_action('wp_ajax_shopcommerce_process_batch', 'shopcommerce_ajax_process_batch');
     add_action('wp_ajax_shopcommerce_get_batch_progress', 'shopcommerce_ajax_get_batch_progress');
@@ -3180,3 +3183,52 @@ function shopcommerce_ajax_create_external_order() {
 }
 
 add_action('wp_ajax_shopcommerce_create_external_order', 'shopcommerce_ajax_create_external_order');
+
+/**
+ * AJAX handler for updating category markup percentage
+ */
+function shopcommerce_ajax_update_category_markup() {
+    check_ajax_referer('shopcommerce_admin_nonce', 'nonce');
+
+    if (!current_user_can('manage_options')) {
+        wp_send_json_error(['message' => 'Insufficient permissions']);
+    }
+
+    $category_id = isset($_POST['category_id']) ? intval($_POST['category_id']) : 0;
+    $category_code = isset($_POST['category_code']) ? sanitize_text_field($_POST['category_code']) : '';
+    $markup_percentage = isset($_POST['markup_percentage']) ? floatval($_POST['markup_percentage']) : 0;
+
+    if (!$category_id || !$category_code) {
+        wp_send_json_error(['message' => 'Category ID and code are required']);
+    }
+
+    // Validate markup percentage range
+    if ($markup_percentage < 0 || $markup_percentage > 100) {
+        wp_send_json_error(['message' => 'Markup percentage must be between 0 and 100']);
+    }
+
+    // Get config instance
+    $config = isset($GLOBALS['shopcommerce_config']) ? $GLOBALS['shopcommerce_config'] : null;
+    if (!$config) {
+        wp_send_json_error(['message' => 'Configuration manager not available']);
+    }
+
+    try {
+        $success = $config->update_category_markup($category_code, $markup_percentage);
+
+        if ($success) {
+            wp_send_json_success([
+                'message' => 'Markup percentage updated successfully',
+                'category_id' => $category_id,
+                'category_code' => $category_code,
+                'new_markup' => $markup_percentage,
+                'display_value' => $markup_percentage > 0 ? number_format($markup_percentage, 1) . '%' : 'Default'
+            ]);
+        } else {
+            wp_send_json_error(['message' => 'Failed to update markup percentage']);
+        }
+    } catch (Exception $e) {
+        wp_send_json_error(['message' => 'Error updating markup: ' . $e->getMessage()]);
+    }
+}
+add_action('wp_ajax_shopcommerce_update_category_markup', 'shopcommerce_ajax_update_category_markup');
