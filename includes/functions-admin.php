@@ -3232,3 +3232,101 @@ function shopcommerce_ajax_update_category_markup() {
     }
 }
 add_action('wp_ajax_shopcommerce_update_category_markup', 'shopcommerce_ajax_update_category_markup');
+
+/**
+ * AJAX handler for getting brand categories
+ */
+function shopcommerce_ajax_get_brand_categories() {
+    check_ajax_referer('shopcommerce_admin_nonce', 'nonce');
+
+    if (!current_user_can('manage_options')) {
+        wp_send_json_error(['message' => 'Insufficient permissions']);
+    }
+
+    $brand_id = isset($_POST['brand_id']) ? intval($_POST['brand_id']) : 0;
+    if (!$brand_id) {
+        wp_send_json_error(['message' => 'Invalid brand ID']);
+    }
+
+    // Use jobs store if available, fallback to config
+    $jobs_store = isset($GLOBALS['shopcommerce_jobs_store']) ? $GLOBALS['shopcommerce_jobs_store'] : null;
+    $config = isset($GLOBALS['shopcommerce_config']) ? $GLOBALS['shopcommerce_config'] : null;
+
+    if (!$jobs_store && !$config) {
+        wp_send_json_error(['message' => 'Neither jobs store nor configuration manager available']);
+    }
+
+    try {
+        if ($jobs_store) {
+            $brand_categories = $jobs_store->get_brand_categories($brand_id);
+        } else {
+            $brand_categories = $config->get_brand_categories($brand_id);
+        }
+
+        $category_ids = array_map(function($category) {
+            return $category->id;
+        }, $brand_categories);
+
+        wp_send_json_success([
+            'categories' => $category_ids,
+            'brand_id' => $brand_id
+        ]);
+    } catch (Exception $e) {
+        wp_send_json_error(['message' => 'Error retrieving brand categories: ' . $e->getMessage()]);
+    }
+}
+add_action('wp_ajax_shopcommerce_get_brand_categories', 'shopcommerce_ajax_get_brand_categories');
+
+/**
+ * AJAX handler for updating brand categories
+ */
+function shopcommerce_ajax_update_brand_categories() {
+    check_ajax_referer('shopcommerce_admin_nonce', 'nonce');
+
+    if (!current_user_can('manage_options')) {
+        wp_send_json_error(['message' => 'Insufficient permissions']);
+    }
+
+    $brand_id = isset($_POST['brand_id']) ? intval($_POST['brand_id']) : 0;
+    $categories = isset($_POST['categories']) ? array_map('intval', (array) $_POST['categories']) : [];
+
+    if (!$brand_id) {
+        wp_send_json_error(['message' => 'Invalid brand ID']);
+    }
+
+    // Use jobs store if available, fallback to config
+    $jobs_store = isset($GLOBALS['shopcommerce_jobs_store']) ? $GLOBALS['shopcommerce_jobs_store'] : null;
+    $config = isset($GLOBALS['shopcommerce_config']) ? $GLOBALS['shopcommerce_config'] : null;
+
+    if (!$jobs_store && !$config) {
+        wp_send_json_error(['message' => 'Neither jobs store nor configuration manager available']);
+    }
+
+    try {
+        if ($jobs_store) {
+            $success = $jobs_store->update_brand_categories($brand_id, $categories);
+        } else {
+            $success = $config->update_brand_categories($brand_id, $categories);
+        }
+
+        if ($success) {
+            // Clear cache and rebuild jobs after updating categories
+            if (isset($GLOBALS['shopcommerce_cron'])) {
+                $GLOBALS['shopcommerce_cron']->rebuild_jobs();
+            }
+
+            $category_count = count($categories);
+            wp_send_json_success([
+                'message' => "Brand categories updated successfully ({$category_count} categories selected)",
+                'brand_id' => $brand_id,
+                'category_count' => $category_count,
+                'categories' => $categories
+            ]);
+        } else {
+            wp_send_json_error(['message' => 'Failed to update brand categories']);
+        }
+    } catch (Exception $e) {
+        wp_send_json_error(['message' => 'Error updating brand categories: ' . $e->getMessage()]);
+    }
+}
+add_action('wp_ajax_shopcommerce_update_brand_categories', 'shopcommerce_ajax_update_brand_categories');

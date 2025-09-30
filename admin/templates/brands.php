@@ -85,9 +85,6 @@ $current_tab = isset($_GET['tab']) ? sanitize_text_field($_GET['tab']) : 'brands
                             <span class="dashicons dashicons-update"></span>
                             Sync API Brands
                         </button>
-                        <button type="button" class="button button-primary" id="add-brand-btn">
-                            Add New Brand
-                        </button>
                     </div>
                 </div>
 
@@ -125,11 +122,16 @@ $current_tab = isset($_GET['tab']) ? sanitize_text_field($_GET['tab']) : 'brands
                                     </td>
                                     <td><?php echo esc_html($brand->description); ?></td>
                                     <td>
-                                        <?php if ($has_all_categories): ?>
-                                            <span class="badge badge-success">All Categories (<?php echo $total_categories; ?>)</span>
-                                        <?php else: ?>
-                                            <span class="badge badge-info"><?php echo $category_count; ?> Categories</span>
-                                                                                    <?php endif; ?>
+                                        <div class="brand-categories-cell" data-brand-id="<?php echo $brand->id; ?>" data-brand-name="<?php echo esc_attr($brand->name); ?>" data-all-categories="<?php echo $has_all_categories ? 'true' : 'false'; ?>">
+                                            <?php if ($has_all_categories): ?>
+                                                <span class="badge badge-success category-clickable">All Categories (<?php echo $total_categories; ?>)</span>
+                                            <?php else: ?>
+                                                <span class="badge badge-info category-clickable"><?php echo $category_count; ?> Categories</span>
+                                            <?php endif; ?>
+                                            <div class="category-edit-hint">
+                                                <small>Click to edit categories</small>
+                                            </div>
+                                        </div>
                                     </td>
                                     <td>
                                         <span class="status-badge <?php echo $brand->is_active ? 'status-active' : 'status-inactive'; ?>">
@@ -379,6 +381,40 @@ $current_tab = isset($_GET['tab']) ? sanitize_text_field($_GET['tab']) : 'brands
             <div class="modal-actions">
                 <button type="button" class="button button-primary" id="confirm-modal-confirm">Confirm</button>
                 <button type="button" class="button" id="confirm-modal-cancel">Cancel</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Brand Categories Modal -->
+<div id="brand-categories-modal" class="shopcommerce-modal" style="display: none;">
+    <div class="modal-content modal-large">
+        <div class="modal-header">
+            <h3 id="brand-categories-modal-title">Edit Brand Categories</h3>
+            <button type="button" class="close-modal">&times;</button>
+        </div>
+        <div class="modal-body">
+            <input type="hidden" id="brand-categories-brand-id" value="">
+            <input type="hidden" id="brand-categories-brand-name" value="">
+
+            <div class="categories-selection-container">
+                <div class="categories-header">
+                    <h4>Categories for <strong id="brand-categories-display-name"></strong></h4>
+                    <div class="category-controls">
+                        <button type="button" class="button" id="select-all-categories-btn">Select All</button>
+                        <button type="button" class="button" id="deselect-all-categories-btn">Deselect All</button>
+                    </div>
+                </div>
+
+                <div class="categories-grid" id="brand-categories-grid">
+                    <!-- Categories will be loaded here via JavaScript -->
+                </div>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <div class="modal-actions">
+                <button type="button" class="button button-primary" id="save-brand-categories-btn">Save Categories</button>
+                <button type="button" class="button" id="cancel-brand-categories-btn">Cancel</button>
             </div>
         </div>
     </div>
@@ -715,9 +751,146 @@ $current_tab = isset($_GET['tab']) ? sanitize_text_field($_GET['tab']) : 'brands
     border-color: #666;
     color: #32373c;
 }
+
+/* Brand Categories Cell Styles */
+.brand-categories-cell {
+    cursor: pointer;
+    position: relative;
+}
+
+.category-clickable {
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: inline-block;
+    padding: 4px 8px;
+    border-radius: 4px;
+}
+
+.category-clickable:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 2px 4px rgba(0, 115, 170, 0.2);
+    background-color: #e7f3ff;
+}
+
+.category-edit-hint {
+    color: #666;
+    font-size: 10px;
+    margin-top: 2px;
+    opacity: 0;
+    transition: opacity 0.2s ease;
+}
+
+.brand-categories-cell:hover .category-edit-hint {
+    opacity: 1;
+}
+
+/* Brand Categories Modal Styles */
+.modal-large {
+    max-width: 700px;
+    width: 90vw;
+}
+
+.categories-selection-container {
+    max-height: 60vh;
+    overflow-y: auto;
+}
+
+.categories-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+    padding-bottom: 15px;
+    border-bottom: 1px solid #ddd;
+}
+
+.categories-header h4 {
+    margin: 0;
+    font-size: 16px;
+    color: #23282d;
+}
+
+.category-controls {
+    display: flex;
+    gap: 8px;
+}
+
+.categories-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 12px;
+    margin-top: 15px;
+}
+
+.category-item {
+    display: flex;
+    align-items: center;
+    padding: 12px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    background: #fff;
+    transition: all 0.2s ease;
+    cursor: pointer;
+}
+
+.category-item:hover {
+    border-color: #0073aa;
+    background-color: #f9f9f9;
+}
+
+.category-item.selected {
+    border-color: #0073aa;
+    background-color: #e7f3ff;
+}
+
+.category-checkbox {
+    margin-right: 8px;
+}
+
+.category-info {
+    flex: 1;
+}
+
+.category-name {
+    font-weight: 600;
+    color: #23282d;
+    display: block;
+    margin-bottom: 2px;
+}
+
+.category-code {
+    font-size: 12px;
+    color: #666;
+    background: #f0f0f1;
+    padding: 2px 6px;
+    border-radius: 3px;
+    display: inline-block;
+}
+
+.category-description {
+    font-size: 11px;
+    color: #666;
+    margin-top: 4px;
+    line-height: 1.3;
+}
+
+.modal-footer {
+    padding: 20px;
+    border-top: 1px solid #ddd;
+    background: #f9f9f9;
+    border-radius: 0 0 4px 4px;
+}
+
+.modal-actions {
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+}
 </style>
 
 <script type="text/javascript">
+var shopcommerce_admin_nonce = '<?php echo wp_create_nonce("shopcommerce_admin_nonce"); ?>';
+
 jQuery(document).ready(function($) {
     // Modal handling
     function openModal(modalId) {
@@ -726,6 +899,41 @@ jQuery(document).ready(function($) {
 
     function closeModal(modalId) {
         $('#' + modalId).hide();
+    }
+
+    // Notice handling
+    function showNotice(message, type) {
+        type = type || 'info';
+
+        // Remove any existing notices
+        $('.shopcommerce-notice').remove();
+
+        // Create notice element
+        var $notice = $('<div class="notice shopcommerce-notice notice-' + type + ' is-dismissible">')
+            .html('<p>' + message + '</p>')
+            .append('<button type="button" class="notice-dismiss"><span class="screen-reader-text">Dismiss this notice.</span></button>');
+
+        // Add notice to top of the page
+        $('.wrap').prepend($notice);
+
+        // Handle dismiss button
+        $notice.on('click', '.notice-dismiss', function() {
+            $notice.fadeOut(300, function() {
+                $(this).remove();
+            });
+        });
+
+        // Auto-hide success notices after 5 seconds
+        if (type === 'success') {
+            setTimeout(function() {
+                $notice.fadeOut(300, function() {
+                    $(this).remove();
+                });
+            }, 5000);
+        }
+
+        // Scroll to top to show notice
+        $('html, body').animate({ scrollTop: 0 }, 200);
     }
 
     // Close modal buttons
@@ -1129,6 +1337,158 @@ jQuery(document).ready(function($) {
             $(this).closest('.markup-cell').find('.cancel-markup-btn').click();
             e.preventDefault();
         }
+    });
+
+    // Brand Categories Modal Functionality
+    var allCategories = <?php echo json_encode($active_categories); ?>;
+    var currentBrandCategories = [];
+
+    // Open brand categories modal when clicking on categories cell
+    $('.brand-categories-cell').on('click', function(e) {
+        e.preventDefault();
+
+        var brandId = $(this).data('brand-id');
+        var brandName = $(this).data('brand-name');
+        var allCategoriesFlag = $(this).data('all-categories') === 'true';
+
+        // Set modal data
+        $('#brand-categories-brand-id').val(brandId);
+        $('#brand-categories-brand-name').val(brandName);
+        $('#brand-categories-display-name').text(brandName);
+
+        // Load current brand categories
+        loadBrandCategories(brandId, allCategoriesFlag);
+
+        // Open modal
+        openModal('brand-categories-modal');
+    });
+
+    function loadBrandCategories(brandId, hasAllCategories) {
+        currentBrandCategories = [];
+
+        // Get current brand categories via AJAX
+        $.ajax({
+            url: ajaxurl,
+            type: 'POST',
+            data: {
+                action: 'shopcommerce_get_brand_categories',
+                nonce: shopcommerce_admin_nonce,
+                brand_id: brandId
+            },
+            success: function(response) {
+                if (response.success) {
+                    currentBrandCategories = response.data.categories || [];
+                    renderCategoriesGrid(hasAllCategories);
+                } else {
+                    showNotice('Error loading brand categories', 'error');
+                }
+            },
+            error: function() {
+                showNotice('Network error occurred while loading categories', 'error');
+            }
+        });
+    }
+
+    function renderCategoriesGrid(hasAllCategories) {
+        var $grid = $('#brand-categories-grid');
+        $grid.empty();
+
+        // Show "All Categories" message if applicable
+        if (hasAllCategories) {
+            $grid.html('<div class="notice notice-info"><p>This brand is configured for all categories. Click "Deselect All" to customize.</p></div>');
+            return;
+        }
+
+        // Render category items
+        allCategories.forEach(function(category) {
+            var isSelected = currentBrandCategories.includes(category.id);
+            var $categoryItem = $('<div class="category-item' + (isSelected ? ' selected' : '') + '" data-category-id="' + category.id + '">');
+
+            $categoryItem.html(`
+                <input type="checkbox" class="category-checkbox" ${isSelected ? 'checked' : ''}>
+                <div class="category-info">
+                    <span class="category-name">${category.name}</span>
+                    <span class="category-code">${category.code}</span>
+                    ${category.description ? '<div class="category-description">' + category.description + '</div>' : ''}
+                </div>
+            `);
+
+            // Handle category item click
+            $categoryItem.on('click', function(e) {
+                if (e.target.type !== 'checkbox') {
+                    var $checkbox = $(this).find('.category-checkbox');
+                    $checkbox.prop('checked', !$checkbox.prop('checked'));
+                }
+                $(this).toggleClass('selected');
+            });
+
+            // Handle checkbox change
+            $categoryItem.find('.category-checkbox').on('change', function() {
+                $(this).closest('.category-item').toggleClass('selected', $(this).prop('checked'));
+            });
+
+            $grid.append($categoryItem);
+        });
+    }
+
+    // Select all categories
+    $('#select-all-categories-btn').on('click', function() {
+        $('.category-item').addClass('selected');
+        $('.category-checkbox').prop('checked', true);
+    });
+
+    // Deselect all categories
+    $('#deselect-all-categories-btn').on('click', function() {
+        $('.category-item').removeClass('selected');
+        $('.category-checkbox').prop('checked', false);
+    });
+
+    // Save brand categories
+    $('#save-brand-categories-btn').on('click', function() {
+        var brandId = $('#brand-categories-brand-id').val();
+        var selectedCategories = [];
+
+        $('.category-item.selected').each(function() {
+            selectedCategories.push(parseInt($(this).data('category-id')));
+        });
+
+        var $btn = $(this);
+        var originalText = $btn.text();
+        $btn.prop('disabled', true).text('Saving...');
+
+        $.ajax({
+            url: ajaxurl,
+            type: 'POST',
+            data: {
+                action: 'shopcommerce_update_brand_categories',
+                nonce: shopcommerce_admin_nonce,
+                brand_id: brandId,
+                categories: selectedCategories
+            },
+            success: function(response) {
+                if (response.success) {
+                    showNotice('Brand categories updated successfully', 'success');
+                    closeModal('brand-categories-modal');
+                    // Reload page to update the table
+                    setTimeout(function() {
+                        location.reload();
+                    }, 1000);
+                } else {
+                    showNotice('Error: ' + response.data.message, 'error');
+                }
+            },
+            error: function() {
+                showNotice('Network error occurred while updating categories', 'error');
+            },
+            complete: function() {
+                $btn.prop('disabled', false).text(originalText);
+            }
+        });
+    });
+
+    // Cancel brand categories
+    $('#cancel-brand-categories-btn').on('click', function() {
+        closeModal('brand-categories-modal');
     });
 });
 </script>
