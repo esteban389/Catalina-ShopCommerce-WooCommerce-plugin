@@ -577,12 +577,31 @@ class ShopCommerce_Jobs_Store {
     public function get_category_markup_percentage_by_name($category_name) {
         global $wpdb;
 
+        // Validate input
+        if (empty($category_name)) {
+            $this->logger->debug('Empty category name provided for markup lookup');
+            return 15.00;
+        }
+
         $markup = $wpdb->get_var($wpdb->prepare(
             "SELECT markup_percentage FROM {$this->categories_table} WHERE name = %s AND is_active = 1",
             $category_name
         ));
 
-        return $markup !== null ? floatval($markup) : 15.00; // Default to 15% if not found
+        if ($markup === null) {
+            $this->logger->debug('Category markup not found, using default', [
+                'category_name' => $category_name
+            ]);
+            return 15.00;
+        }
+
+        $markup_value = floatval($markup);
+        $this->logger->debug('Retrieved category markup', [
+            'category_name' => $category_name,
+            'markup_percentage' => $markup_value
+        ]);
+
+        return $markup_value;
     }
 
     /**
