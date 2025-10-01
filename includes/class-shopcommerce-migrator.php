@@ -23,11 +23,21 @@ class ShopCommerce_Migrator {
     private $categories_table;
     private $brand_categories_table;
     private $batch_queue_table;
+    private $migrations_table;
 
     /**
      * Migration version
      */
-    private $current_version = '1.0.0';
+    private $current_version = '1.2.0';
+
+    /**
+     * Available migrations with their versions
+     */
+    private $migrations = [
+        '1.0.0' => 'create_initial_tables',
+        '1.1.0' => 'add_markup_percentage_column',
+        '1.2.0' => 'add_batch_queue_table',
+    ];
 
     /**
      * Constructor
@@ -42,6 +52,7 @@ class ShopCommerce_Migrator {
         $this->categories_table = $wpdb->prefix . 'shopcommerce_categories';
         $this->brand_categories_table = $wpdb->prefix . 'shopcommerce_brand_categories';
         $this->batch_queue_table = $wpdb->prefix . 'shopcommerce_batch_queue';
+        $this->migrations_table = $wpdb->prefix . 'shopcommerce_migrations';
     }
 
     /**
@@ -53,16 +64,35 @@ class ShopCommerce_Migrator {
         try {
             $this->logger->info('Starting database migrations', ['version' => $this->current_version]);
 
-            // Create/Update tables
-            $this->create_brands_table();
-            $this->create_categories_table();
-            $this->create_brand_categories_table();
-            $this->create_batch_queue_table();
+            // Create migrations table first (if it doesn't exist)
+            $this->create_migrations_table();
 
-            // Initialize default data if needed
-            $this->initialize_default_data();
+            // Get current executed migrations
+            $executed_migrations = $this->get_executed_migrations();
 
-            $this->logger->info('Database migrations completed successfully');
+            // Run pending migrations in order
+            $pending_count = 0;
+            foreach ($this->migrations as $version => $migration_method) {
+                if (!in_array($version, $executed_migrations)) {
+                    $this->logger->info('Running migration', ['version' => $version]);
+
+                    if ($this->run_migration($version, $migration_method)) {
+                        $this->mark_migration_executed($version);
+                        $pending_count++;
+                    } else {
+                        throw new Exception("Migration {$version} failed");
+                    }
+                }
+            }
+
+            // Initialize default data if needed (only for fresh installs)
+            if (empty($executed_migrations)) {
+                $this->initialize_default_data();
+            }
+
+            $this->logger->info('Database migrations completed successfully', [
+                'executed_count' => $pending_count
+            ]);
             return true;
 
         } catch (Exception $e) {
@@ -72,6 +102,131 @@ class ShopCommerce_Migrator {
             ]);
             return false;
         }
+    }
+
+    /**
+     * Create migrations tracking table
+     */
+    private function create_migrations_table() {
+        global $wpdb;
+
+        $charset_collate = $wpdb->get_charset_collate();
+
+        $sql = "CREATE TABLE IF NOT EXISTS {$this->migrations_table} (
+            id int(11) NOT NULL AUTO_INCREMENT,
+            version varchar(20) NOT NULL,
+            migration_name varchar(100) NOT NULL,
+            executed_at datetime DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY  (id),
+            UNIQUE KEY version (version)
+        ) $charset_collate;";
+
+        $this->execute_sql($sql, 'migrations table');
+    }
+
+    /**
+     * Get list of executed migrations
+     *
+     * @return array Array of executed migration versions
+     */
+    private function get_executed_migrations() {
+        global $wpdb;
+
+        $results = $wpdb->get_col("SELECT version FROM {$this->migrations_table} ORDER BY version");
+        return $results ? $results : [];
+    }
+
+    /**
+     * Mark a migration as executed
+     *
+     * @param string $version Migration version
+     * @return bool Success status
+     */
+    private function mark_migration_executed($version) {
+        global $wpdb;
+
+        if (!isset($this->migrations[$version])) {
+            return false;
+        }
+
+        $migration_name = $this->migrations[$version];
+
+        $result = $wpdb->insert(
+            $this->migrations_table,
+            [
+                'version' => $version,
+                'migration_name' => $migration_name,
+            ],
+            ['%s', '%s']
+        );
+
+        if ($result === false) {
+            $this->logger->error('Failed to mark migration as executed', [
+                'version' => $version,
+                'error' => $wpdb->last_error
+            ]);
+            return false;
+        }
+
+        $this->logger->debug('Migration marked as executed', ['version' => $version]);
+        return true;
+    }
+
+    /**
+     * Run a specific migration
+     *
+     * @param string $version Migration version
+     * @param string $migration_method Migration method name
+     * @return bool Success status
+     */
+    private function run_migration($version, $migration_method) {
+        try {
+            // Check if method exists
+            if (!method_exists($this, $migration_method)) {
+                throw new Exception("Migration method {$migration_method} does not exist");
+            }
+
+            // Run the migration
+            $this->$migration_method();
+
+            $this->logger->info('Migration executed successfully', [
+                'version' => $version,
+                'method' => $migration_method
+            ]);
+
+            return true;
+
+        } catch (Exception $e) {
+            $this->logger->error('Migration execution failed', [
+                'version' => $version,
+                'method' => $migration_method,
+                'error' => $e->getMessage()
+            ]);
+            return false;
+        }
+    }
+
+    /**
+     * Migration 1.0.0: Create initial tables
+     */
+    private function create_initial_tables() {
+        $this->create_brands_table();
+        $this->create_categories_table();
+        $this->create_brand_categories_table();
+    }
+
+    /**
+     * Migration 1.1.0: Add markup_percentage column
+     */
+    private function add_markup_percentage_column() {
+        $this->ensure_markup_percentage_column();
+    }
+
+    /**
+     * Migration 1.2.0: Add batch queue table
+     */
+    private function add_batch_queue_table() {
+        $this->create_batch_queue_table();
     }
 
     /**
@@ -119,9 +274,6 @@ class ShopCommerce_Migrator {
         ) $charset_collate;";
 
         $this->execute_sql($sql, 'categories table');
-
-        // Check if we need to add the markup_percentage column (for existing installations)
-        $this->ensure_markup_percentage_column();
     }
 
     /**
@@ -402,6 +554,7 @@ class ShopCommerce_Migrator {
         global $wpdb;
 
         $tables = [
+            $this->migrations_table,
             $this->brands_table,
             $this->categories_table,
             $this->brand_categories_table,
@@ -432,6 +585,7 @@ class ShopCommerce_Migrator {
         global $wpdb;
 
         try {
+            $wpdb->query("DROP TABLE IF EXISTS {$this->migrations_table}");
             $wpdb->query("DROP TABLE IF EXISTS {$this->batch_queue_table}");
             $wpdb->query("DROP TABLE IF EXISTS {$this->brand_categories_table}");
             $wpdb->query("DROP TABLE IF EXISTS {$this->categories_table}");
@@ -442,6 +596,86 @@ class ShopCommerce_Migrator {
 
         } catch (Exception $e) {
             $this->logger->error('Error dropping tables', ['error' => $e->getMessage()]);
+            return false;
+        }
+    }
+
+    /**
+     * Get migration status
+     *
+     * @return array Migration status information
+     */
+    public function get_migration_status() {
+        global $wpdb;
+
+        $executed_migrations = $this->get_executed_migrations();
+        $pending_migrations = array_diff(array_keys($this->migrations), $executed_migrations);
+
+        $status = [
+            'current_version' => $this->current_version,
+            'total_migrations' => count($this->migrations),
+            'executed_count' => count($executed_migrations),
+            'pending_count' => count($pending_migrations),
+            'executed_migrations' => $executed_migrations,
+            'pending_migrations' => array_values($pending_migrations),
+            'last_migration' => null,
+        ];
+
+        // Get last executed migration
+        if (!empty($executed_migrations)) {
+            $last_migration = $wpdb->get_row($wpdb->prepare(
+                "SELECT * FROM {$this->migrations_table} ORDER BY executed_at DESC LIMIT 1"
+            ));
+
+            if ($last_migration) {
+                $status['last_migration'] = [
+                    'version' => $last_migration->version,
+                    'name' => $last_migration->migration_name,
+                    'executed_at' => $last_migration->executed_at,
+                ];
+            }
+        }
+
+        return $status;
+    }
+
+    /**
+     * Check if a specific migration has been executed
+     *
+     * @param string $version Migration version to check
+     * @return bool True if migration has been executed
+     */
+    public function is_migration_executed($version) {
+        global $wpdb;
+
+        $count = $wpdb->get_var($wpdb->prepare(
+            "SELECT COUNT(*) FROM {$this->migrations_table} WHERE version = %s",
+            $version
+        ));
+
+        return (int)$count > 0;
+    }
+
+    /**
+     * Reset migration tracking (useful for testing)
+     *
+     * @param bool $confirm Confirmation flag
+     * @return bool Success status
+     */
+    public function reset_migrations($confirm = false) {
+        if (!$confirm) {
+            return false;
+        }
+
+        global $wpdb;
+
+        try {
+            $wpdb->query("TRUNCATE TABLE {$this->migrations_table}");
+            $this->logger->warning('Migration tracking reset');
+            return true;
+
+        } catch (Exception $e) {
+            $this->logger->error('Error resetting migrations', ['error' => $e->getMessage()]);
             return false;
         }
     }

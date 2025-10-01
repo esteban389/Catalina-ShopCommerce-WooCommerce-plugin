@@ -254,10 +254,17 @@
         <class>
             <name>ShopCommerce_Migrator</name>
             <file>includes/class-shopcommerce-migrator.php</file>
-            <description>Central migration manager for database schema and initialization - single source of truth for all database changes</description>
+            <description>Central migration manager for database schema and initialization - single source of truth for all database changes with version-based migration tracking</description>
             <global_variable>$GLOBALS['shopcommerce_migrator']</global_variable>
             <key_methods>
                 <method>run_migrations()</method>
+                <method>create_migrations_table()</method>
+                <method>get_executed_migrations()</method>
+                <method>mark_migration_executed()</method>
+                <method>run_migration()</method>
+                <method>create_initial_tables()</method>
+                <method>add_markup_percentage_column()</method>
+                <method>add_batch_queue_table()</method>
                 <method>create_brands_table()</method>
                 <method>create_categories_table()</method>
                 <method>create_brand_categories_table()</method>
@@ -265,9 +272,13 @@
                 <method>ensure_markup_percentage_column()</method>
                 <method>initialize_default_data()</method>
                 <method>check_tables_exist()</method>
+                <method>get_migration_status()</method>
+                <method>is_migration_executed()</method>
+                <method>reset_migrations()</method>
                 <method>drop_all_tables()</method>
             </key_methods>
             <dependencies>ShopCommerce_Logger</dependencies>
+            <version>1.2.0</version>
         </class>
     </classes>
 
@@ -323,6 +334,19 @@
                 <indexes>
                     <index>unique_category_code (category_code)</index>
                     <index>idx_category_code (category_code)</index>
+                </indexes>
+            </table>
+            <table>
+                <name>wp_shopcommerce_migrations</name>
+                <description>Tracks executed database migrations</description>
+                <fields>
+                    <field>id (INT, Primary Key, Auto-increment)</field>
+                    <field>version (VARCHAR(20), Not Null, Unique)</field>
+                    <field>migration_name (VARCHAR(100), Not Null)</field>
+                    <field>executed_at (DATETIME, Default: CURRENT_TIMESTAMP)</field>
+                </fields>
+                <indexes>
+                    <index>unique_version (version)</index>
                 </indexes>
             </table>
             <table>
