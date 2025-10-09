@@ -36,21 +36,21 @@ class ShopCommerce_Product {
      * Calculate product price with markup based on category
      *
      * @param float $original_price Original price from API
-     * @param string $category Product category
+     * @param int $category_code Product category code (IdFamilia)
      * @return float Calculated price with markup
      */
-    private function calculate_product_price($original_price, $category) {
+    private function calculate_product_price($original_price, $category_code) {
         // Get markup percentage from database configuration
         $markup_percentage = 0.15; // Default fallback
 
-        // Try to get the configured markup percentage from jobs store
-        if (isset($GLOBALS['shopcommerce_jobs_store']) && !empty($category)) {
+        // Try to get the configured markup percentage from config manager
+        if (isset($GLOBALS['shopcommerce_config']) && !empty($category_code)) {
             try {
-                $markup_percentage = $GLOBALS['shopcommerce_jobs_store']->get_category_markup_percentage_by_name($category);
+                $markup_percentage = $GLOBALS['shopcommerce_config']->get_category_markup($category_code);
                 $markup_percentage = $markup_percentage / 100; // Convert from percentage to decimal
             } catch (Exception $e) {
                 $this->logger->warning('Error getting markup percentage, using default', [
-                    'category' => $category,
+                    'category_code' => $category_code,
                     'error' => $e->getMessage()
                 ]);
             }
@@ -64,7 +64,7 @@ class ShopCommerce_Product {
 
         $this->logger->debug('Price calculated', [
             'original_price' => $original_price,
-            'category' => $category,
+            'category_code' => $category_code,
             'markup_percentage' => $markup_percentage,
             'final_price' => $final_price
         ]);
@@ -467,19 +467,19 @@ class ShopCommerce_Product {
             }
         }
 
-        // Calculate price with markup
-        $category_name = !empty($product_data['CategoriaDescripcion']) ? $product_data['CategoriaDescripcion'] :
-                        (!empty($product_data['Categoria']) ? $product_data['Categoria'] : 'unknown');
-        $calculated_price = $this->calculate_product_price($product_data['precio'], $category_name);
+        // Calculate price with markup using category code
+        $this->logger->debug('Calculating price with markup using category code', [$product_data]);
+        $category_code = !empty($product_data['IdFamilia']) ? $product_data['IdFamilia'] : 0;
+        $calculated_price = $this->calculate_product_price($product_data['precio'], $category_code);
 
         // Get the actual markup percentage used
-        $actual_markup_percentage = 0.15; // Default fallback
-        if (isset($GLOBALS['shopcommerce_jobs_store']) && !empty($category_name)) {
+        $actual_markup_percentage = 15.00; // Default fallback
+        if (isset($GLOBALS['shopcommerce_config']) && !empty($category_code)) {
             try {
-                $actual_markup_percentage = $GLOBALS['shopcommerce_jobs_store']->get_category_markup_percentage_by_name($category_name);
+                $actual_markup_percentage = $GLOBALS['shopcommerce_config']->get_category_markup($category_code);
             } catch (Exception $e) {
-                $this->logger->warning('Error geting markup percentage for metadata, using default', [
-                    'category' => $category_name,
+                $this->logger->warning('Error getting markup percentage for metadata, using default', [
+                    'category_code' => $category_code,
                     'error' => $e->getMessage()
                 ]);
             }

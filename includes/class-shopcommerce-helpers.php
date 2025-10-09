@@ -509,6 +509,8 @@ class ShopCommerce_Helpers
             $sanitized['xmlAttributes'] = null;
         }
 
+        $sanitized['IdFamilia'] = isset($product_data['IdFamilia']) ? intval($product_data['IdFamilia']) : 0;
+
         return $sanitized;
     }
 
