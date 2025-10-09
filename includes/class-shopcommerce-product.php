@@ -478,7 +478,7 @@ class ShopCommerce_Product {
             try {
                 $actual_markup_percentage = $GLOBALS['shopcommerce_jobs_store']->get_category_markup_percentage_by_name($category_name);
             } catch (Exception $e) {
-                $this->logger->warning('Error getting markup percentage for metadata, using default', [
+                $this->logger->warning('Error geting markup percentage for metadata, using default', [
                     'category' => $category_name,
                     'error' => $e->getMessage()
                 ]);
