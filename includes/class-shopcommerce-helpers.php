@@ -511,6 +511,12 @@ class ShopCommerce_Helpers
 
         $sanitized['IdFamilia'] = isset($product_data['IdFamilia']) ? intval($product_data['IdFamilia']) : 0;
 
+        $sanitized['CurrencyDef'] = isset($product_data['CurrencyDef']) ? sanitize_text_field($product_data['CurrencyDef']) : '';
+
+        $sanitized['Discount'] = isset($product_data['Descuento']) ? floatval($product_data['Descuento']) : 0;
+
+        $sanitazed['TributariClassification'] = isset($product_data['TributariClassification']) ? sanitize_text_field($product_data['TributariClassification']) : '';
+
         return $sanitized;
     }
 

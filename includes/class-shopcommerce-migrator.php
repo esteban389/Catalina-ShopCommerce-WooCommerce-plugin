@@ -24,11 +24,12 @@ class ShopCommerce_Migrator {
     private $brand_categories_table;
     private $batch_queue_table;
     private $migrations_table;
+    private $currency_exchange_table;
 
     /**
      * Migration version
      */
-    private $current_version = '1.2.0';
+    private $current_version = '1.3.0';
 
     /**
      * Available migrations with their versions
@@ -37,6 +38,7 @@ class ShopCommerce_Migrator {
         '1.0.0' => 'create_initial_tables',
         '1.1.0' => 'add_markup_percentage_column',
         '1.2.0' => 'add_batch_queue_table',
+        '1.3.0' => 'add_currency_exchange_table',
     ];
 
     /**
@@ -53,6 +55,7 @@ class ShopCommerce_Migrator {
         $this->brand_categories_table = $wpdb->prefix . 'shopcommerce_brand_categories';
         $this->batch_queue_table = $wpdb->prefix . 'shopcommerce_batch_queue';
         $this->migrations_table = $wpdb->prefix . 'shopcommerce_migrations';
+        $this->currency_exchange_table = $wpdb->prefix . 'shopcommerce_currency_exchange';
     }
 
     /**
@@ -230,6 +233,13 @@ class ShopCommerce_Migrator {
     }
 
     /**
+     * Migration 1.3.0: Add currency exchange table
+     */
+    private function add_currency_exchange_table() {
+        $this->create_currency_exchange_table();
+    }
+
+    /**
      * Create brands table
      */
     private function create_brands_table() {
@@ -328,6 +338,29 @@ class ShopCommerce_Migrator {
         ) $charset_collate;";
 
         $this->execute_sql($sql, 'batch queue table');
+    }
+
+    /**
+     * Create currency exchange table
+     */
+    private function create_currency_exchange_table() {
+        global $wpdb;
+
+        $charset_collate = $wpdb->get_charset_collate();
+
+        $sql = "CREATE TABLE IF NOT EXISTS {$this->currency_exchange_table} (
+            id int(11) NOT NULL AUTO_INCREMENT,
+            from_currency varchar(3) NOT NULL,
+            exchange_rate decimal(10,4) NOT NULL DEFAULT 1.0000,
+            created_at datetime DEFAULT CURRENT_TIMESTAMP,
+            updated_at datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            PRIMARY KEY  (id),
+            UNIQUE KEY unique_from_currency (from_currency),
+            KEY idx_from_currency (from_currency),
+            KEY idx_updated_at (updated_at)
+        ) $charset_collate;";
+
+        $this->execute_sql($sql, 'currency exchange table');
     }
 
     /**
@@ -558,7 +591,8 @@ class ShopCommerce_Migrator {
             $this->brands_table,
             $this->categories_table,
             $this->brand_categories_table,
-            $this->batch_queue_table
+            $this->batch_queue_table,
+            $this->currency_exchange_table
         ];
 
         foreach ($tables as $table) {
@@ -590,6 +624,7 @@ class ShopCommerce_Migrator {
             $wpdb->query("DROP TABLE IF EXISTS {$this->brand_categories_table}");
             $wpdb->query("DROP TABLE IF EXISTS {$this->categories_table}");
             $wpdb->query("DROP TABLE IF EXISTS {$this->brands_table}");
+            $wpdb->query("DROP TABLE IF EXISTS {$this->currency_exchange_table}");
 
             $this->logger->warning('All ShopCommerce tables dropped');
             return true;

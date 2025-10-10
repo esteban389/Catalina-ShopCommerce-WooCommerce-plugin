@@ -18,7 +18,7 @@ class ShopCommerce_Cron {
     /**
      * Default cron interval
      */
-    const DEFAULT_INTERVAL = 'hourly';
+    const DEFAULT_INTERVAL = 'every_5_minutes';
 
     /**
      * Option keys
@@ -54,7 +54,7 @@ wp_clear_scheduled_hook(SYNC_HOOK_NAME);
 
 // Schedule new clearing
 if (!wp_next_scheduled(SYNC_HOOK_NAME)) {
-    wp_schedule_event(time(), "every_15_minutes", SYNC_HOOK_NAME);
+    wp_schedule_event(time(), "every_5_minutes", SYNC_HOOK_NAME);
 }
 
         wp_clear_scheduled_hook(BATCH_PROCESS_HOOK_NAME);

@@ -189,7 +189,7 @@
         <class>
             <name>ShopCommerce_Config</name>
             <file>includes/class-shopcommerce-config.php</file>
-            <description>Dynamic configuration management with database storage, API brand creation, category markup management, and reset functionality</description>
+            <description>Dynamic configuration management with database storage, API brand creation, category markup management, currency exchange rate management, and reset functionality</description>
             <global_variable>$GLOBALS['shopcommerce_config']</global_variable>
             <key_methods>
                 <method>get_setting()</method>
@@ -202,6 +202,12 @@
                 <method>create_markup_table()</method>
                 <method>get_brand_categories()</method>
                 <method>update_brand_categories()</method>
+                <method>update_currency_exchange_rate()</method>
+                <method>get_currency_exchange_rate()</method>
+                <method>get_fresh_currency_exchange_rate()</method>
+                <method>refresh_currency_exchange_rate()</method>
+                <method>fetch_and_store_currency_rate()</method>
+                <method>create_currency_exchange_table()</method>
             </key_methods>
             <dependencies>ShopCommerce_Logger, ShopCommerce_API</dependencies>
         </class>
@@ -263,6 +269,7 @@
                 <method>mark_migration_executed()</method>
                 <method>run_migration()</method>
                 <method>create_initial_tables()</method>
+                <method>create_currency_exchange_table()</method>
                 <method>add_markup_percentage_column()</method>
                 <method>add_batch_queue_table()</method>
                 <method>create_brands_table()</method>
@@ -366,6 +373,22 @@
                     <field>created_at (DATETIME)</field>
                     <field>updated_at (DATETIME)</field>
                 </fields>
+            </table>
+            <table>
+                <name>wp_shopcommerce_currency_exchange</name>
+                <description>Stores currency exchange rates from various currencies to COP (Colombian Peso)</description>
+                <fields>
+                    <field>id (INT, Primary Key, Auto-increment)</field>
+                    <field>from_currency (VARCHAR(3), Not Null, Unique)</field>
+                    <field>exchange_rate (DECIMAL(10,4), Not Null, Default: 1.0000)</field>
+                    <field>updated_at (DATETIME, Default: CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP)</field>
+                    <field>created_at (DATETIME, Default: CURRENT_TIMESTAMP)</field>
+                </fields>
+                <indexes>
+                    <index>unique_from_currency (from_currency)</index>
+                    <index>idx_from_currency (from_currency)</index>
+                    <index>idx_updated_at (updated_at)</index>
+                </indexes>
             </table>
         </tables>
     </database_schema>

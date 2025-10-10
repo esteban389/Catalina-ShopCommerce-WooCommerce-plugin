@@ -22,6 +22,7 @@ class ShopCommerce_Config {
     private $categories_table;
     private $brand_categories_table;
     private $markup_table;
+    private $currency_exchange_table;
 
     /**
      * Constructor
@@ -36,6 +37,7 @@ class ShopCommerce_Config {
         $this->categories_table = $wpdb->prefix . 'shopcommerce_categories';
         $this->brand_categories_table = $wpdb->prefix . 'shopcommerce_brand_categories';
         $this->markup_table = $wpdb->prefix . 'shopcommerce_category_markup';
+        $this->currency_exchange_table = $wpdb->prefix . 'shopcommerce_currency_exchange';
 
         // Create markup table if it doesn't exist
         $this->create_markup_table();
@@ -820,5 +822,331 @@ class ShopCommerce_Config {
             ]);
             return false;
         }
+    }
+
+    /**
+     * Update or insert currency exchange rate
+     *
+     * @param string $from_currency Source currency code (e.g., 'USD')
+     * @param float $exchange_rate Exchange rate to COP (e.g., 3900.00 means 1 USD = 3900 COP)
+     * @return bool Success status
+     */
+    public function update_currency_exchange_rate($from_currency, $exchange_rate) {
+        global $wpdb;
+
+        $table_name = $this->currency_exchange_table;
+
+        // Validate input
+        if (empty($from_currency) || strlen($from_currency) !== 3) {
+            $this->logger->error('Invalid currency code provided', [
+                'from_currency' => $from_currency,
+                'exchange_rate' => $exchange_rate
+            ]);
+            return false;
+        }
+
+        if (!is_numeric($exchange_rate) || $exchange_rate <= 0) {
+            $this->logger->error('Invalid exchange rate provided', [
+                'from_currency' => $from_currency,
+                'exchange_rate' => $exchange_rate
+            ]);
+            return false;
+        }
+
+        // Convert to uppercase
+        $from_currency = strtoupper($from_currency);
+
+        // Check if record exists
+        $existing = $wpdb->get_var($wpdb->prepare(
+            "SELECT COUNT(*) FROM {$table_name} WHERE from_currency = %s",
+            $from_currency
+        ));
+
+        if ($existing) {
+            // Update existing record
+            $result = $wpdb->update(
+                $table_name,
+                ['exchange_rate' => $exchange_rate],
+                ['from_currency' => $from_currency],
+                ['%f'],
+                ['%s']
+            );
+        } else {
+            // Insert new record
+            $result = $wpdb->insert(
+                $table_name,
+                [
+                    'from_currency' => $from_currency,
+                    'exchange_rate' => $exchange_rate,
+                    'created_at' => current_time('mysql')
+                ],
+                ['%s', '%f', '%s']
+            );
+        }
+
+        if ($result !== false) {
+            $this->logger->info('Currency exchange rate updated successfully', [
+                'from_currency' => $from_currency,
+                'exchange_rate' => $exchange_rate,
+                'action' => $existing ? 'updated' : 'created'
+            ]);
+            return true;
+        } else {
+            $this->logger->error('Failed to update currency exchange rate', [
+                'from_currency' => $from_currency,
+                'exchange_rate' => $exchange_rate,
+                'wpdb_error' => $wpdb->last_error
+            ]);
+            return false;
+        }
+    }
+
+    /**
+     * Get currency exchange rate for a specific currency
+     *
+     * @param string $from_currency Source currency code (e.g., 'USD')
+     * @return float|null Exchange rate to COP or null if not found
+     */
+    public function get_currency_exchange_rate($from_currency) {
+        global $wpdb;
+
+        $table_name = $this->currency_exchange_table;
+
+        // Validate input
+        if (empty($from_currency) || strlen($from_currency) !== 3) {
+            $this->logger->warning('Invalid currency code requested', [
+                'from_currency' => $from_currency
+            ]);
+            return null;
+        }
+
+        // Convert to uppercase
+        $from_currency = strtoupper($from_currency);
+
+        $result = $wpdb->get_var($wpdb->prepare(
+            "SELECT exchange_rate FROM {$table_name} WHERE from_currency = %s",
+            $from_currency
+        ));
+
+        if ($result !== null) {
+            $exchange_rate = floatval($result);
+            $this->logger->debug('Currency exchange rate retrieved', [
+                'from_currency' => $from_currency,
+                'exchange_rate' => $exchange_rate
+            ]);
+            return $exchange_rate;
+        } else {
+            $this->logger->warning('Currency exchange rate not found', [
+                'from_currency' => $from_currency
+            ]);
+            return null;
+        }
+    }
+
+    /**
+     * Get all currency exchange rates
+     *
+     * @return array List of all currency exchange rates
+     */
+    public function get_all_currency_exchange_rates() {
+        global $wpdb;
+
+        $table_name = $this->currency_exchange_table;
+
+        $results = $wpdb->get_results("SELECT * FROM {$table_name} ORDER BY from_currency ASC");
+
+        if ($results) {
+            $rates = [];
+            foreach ($results as $row) {
+                $rates[] = [
+                    'currency' => $row->from_currency,
+                    'exchange_rate' => floatval($row->exchange_rate),
+                    'updated_at' => $row->updated_at,
+                    'created_at' => $row->created_at
+                ];
+            }
+            $this->logger->debug('Retrieved all currency exchange rates', ['count' => count($rates)]);
+            return $rates;
+        } else {
+            $this->logger->info('No currency exchange rates found');
+            return [];
+        }
+    }
+
+    /**
+     * Get fresh currency exchange rate with automatic API fallback
+     *
+     * Checks if the currency rate exists and was updated within the last hour.
+     * If not found or outdated, automatically fetches from ExchangeRate.fun API.
+     *
+     * @param string $from_currency Source currency code (e.g., 'USD')
+     * @param bool $force_update Whether to force API update regardless of freshness
+     * @return float|null Exchange rate to COP or null on failure
+     */
+    public function get_fresh_currency_exchange_rate($from_currency, $force_update = false) {
+        global $wpdb;
+
+        // Validate input
+        if (empty($from_currency) || strlen($from_currency) !== 3) {
+            $this->logger->error('Invalid currency code requested for fresh rate', [
+                'from_currency' => $from_currency
+            ]);
+            return null;
+        }
+
+        // Convert to uppercase
+        $from_currency = strtoupper($from_currency);
+
+        // Check existing rate and timestamp
+        $table_name = $this->currency_exchange_table;
+        $existing_rate = null;
+        $is_fresh = false;
+
+        if (!$force_update) {
+            $result = $wpdb->get_row($wpdb->prepare(
+                "SELECT exchange_rate, updated_at FROM {$table_name} WHERE from_currency = %s",
+                $from_currency
+            ));
+
+            if ($result) {
+                $existing_rate = floatval($result->exchange_rate);
+                $updated_time = strtotime($result->updated_at);
+                $current_time = current_time('timestamp');
+                $age_seconds = $current_time - $updated_time;
+                $one_hour = 3600; // 1 hour in seconds
+
+                $is_fresh = $age_seconds < $one_hour;
+
+                $this->logger->debug('Currency rate freshness check', [
+                    'from_currency' => $from_currency,
+                    'existing_rate' => $existing_rate,
+                    'age_seconds' => $age_seconds,
+                    'is_fresh' => $is_fresh
+                ]);
+            }
+        }
+
+        // Return existing fresh rate
+        if ($existing_rate !== null && $is_fresh && !$force_update) {
+            return $existing_rate;
+        }
+
+        // Need to fetch from API
+        $this->logger->info('Fetching fresh currency rate from API', [
+            'from_currency' => $from_currency,
+            'reason' => $force_update ? 'forced update' : ($existing_rate ? 'rate stale' : 'no existing rate')
+        ]);
+
+        return $this->fetch_and_store_currency_rate($from_currency);
+    }
+
+    /**
+     * Fetch currency rate from ExchangeRate.fun API and store it
+     *
+     * @param string $from_currency Source currency code
+     * @return float|null Exchange rate to COP or null on failure
+     */
+    private function fetch_and_store_currency_rate($from_currency) {
+        $api_url = "https://api.exchangerate.fun/latest?base=" . urlencode($from_currency);
+
+        $this->logger->debug('Making API request for currency rate', [
+            'from_currency' => $from_currency,
+            'api_url' => $api_url
+        ]);
+
+        // Make API request
+        $response = wp_remote_get($api_url, [
+            'timeout' => 30,
+            'headers' => [
+                'Accept' => 'application/json',
+                'User-Agent' => 'ShopCommerce-WP-Plugin/' . SHOPCOMMERCE_SYNC_VERSION
+            ]
+        ]);
+
+        if (is_wp_error($response)) {
+            $this->logger->error('Currency API request failed', [
+                'from_currency' => $from_currency,
+                'error' => $response->get_error_message()
+            ]);
+            return null;
+        }
+
+        $http_code = wp_remote_retrieve_response_code($response);
+        $body = wp_remote_retrieve_body($response);
+
+        if ($http_code !== 200) {
+            $this->logger->error('Currency API returned non-200 status', [
+                'from_currency' => $from_currency,
+                'http_code' => $http_code,
+                'response_body' => $body
+            ]);
+            return null;
+        }
+
+        // Parse JSON response
+        $data = json_decode($body, true);
+
+        if (json_last_error() !== JSON_ERROR_NONE) {
+            $this->logger->error('Failed to parse currency API JSON response', [
+                'from_currency' => $from_currency,
+                'json_error' => json_last_error_msg(),
+                'response_body' => $body
+            ]);
+            return null;
+        }
+
+        // Validate response structure
+        if (!isset($data['rates']) || !isset($data['rates']['COP'])) {
+            $this->logger->error('Currency API response missing COP rate', [
+                'from_currency' => $from_currency,
+                'response_data' => $data
+            ]);
+            return null;
+        }
+
+        $cop_rate = floatval($data['rates']['COP']);
+
+        if ($cop_rate <= 0) {
+            $this->logger->error('Invalid COP rate received from API', [
+                'from_currency' => $from_currency,
+                'cop_rate' => $cop_rate,
+                'response_data' => $data
+            ]);
+            return null;
+        }
+
+        // Store the rate
+        $stored = $this->update_currency_exchange_rate($from_currency, $cop_rate);
+
+        if ($stored) {
+            $this->logger->info('Successfully fetched and stored currency rate', [
+                'from_currency' => $from_currency,
+                'cop_rate' => $cop_rate,
+                'api_timestamp' => $data['timestamp'] ?? 'unknown'
+            ]);
+            return $cop_rate;
+        } else {
+            $this->logger->error('Failed to store currency rate from API', [
+                'from_currency' => $from_currency,
+                'cop_rate' => $cop_rate
+            ]);
+            return null;
+        }
+    }
+
+    /**
+     * Refresh currency exchange rate from API
+     *
+     * Forcefully updates the currency rate from the API regardless of freshness.
+     *
+     * @param string $from_currency Source currency code (e.g., 'USD')
+     * @return float|null Exchange rate to COP or null on failure
+     */
+    public function refresh_currency_exchange_rate($from_currency) {
+        $this->logger->info('Manual currency rate refresh requested', [
+            'from_currency' => $from_currency
+        ]);
+
+        return $this->get_fresh_currency_exchange_rate($from_currency, true);
     }
 }

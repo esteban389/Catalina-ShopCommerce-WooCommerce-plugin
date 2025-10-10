@@ -33,13 +33,17 @@ class ShopCommerce_Product {
     }
 
     /**
-     * Calculate product price with markup based on category
+     * Calculate product price with markup based on category and currency conversion
      *
      * @param float $original_price Original price from API
      * @param int $category_code Product category code (IdFamilia)
-     * @return float Calculated price with markup
+     * @param string $currency_code Product currency code (CurrencyDef)
+     * @return float Calculated price with markup and currency conversion
      */
-    private function calculate_product_price($original_price, $category_code) {
+    private function calculate_product_price($original_price, $category_code, $currency_code = 'COP') {
+        // Convert price to COP if needed
+        $price_in_cop = $this->convert_to_cop($original_price, $currency_code);
+
         // Get markup percentage from database configuration
         $markup_percentage = 0.15; // Default fallback
 
@@ -57,19 +61,79 @@ class ShopCommerce_Product {
         }
 
         // Apply category-specific markup
-        $final_price = $original_price * (1 + $markup_percentage);
+        $final_price = $price_in_cop * (1 + $markup_percentage);
 
         // Round to 2 decimal places
         $final_price = round($final_price, 2);
 
-        $this->logger->debug('Price calculated', [
+        $this->logger->debug('Price calculated with currency conversion', [
             'original_price' => $original_price,
+            'currency_code' => $currency_code,
+            'price_in_cop' => $price_in_cop,
             'category_code' => $category_code,
             'markup_percentage' => $markup_percentage,
             'final_price' => $final_price
         ]);
 
         return $final_price;
+    }
+
+    /**
+     * Convert price to COP using currency exchange rates
+     *
+     * @param float $price Original price
+     * @param string $currency_code Original currency code
+     * @return float Price converted to COP
+     */
+    private function convert_to_cop($price, $currency_code) {
+        // If currency is already COP, return as-is
+        if (strtoupper($currency_code) === 'COP') {
+            return $price;
+        }
+
+        // Try to get fresh exchange rate
+        if (isset($GLOBALS['shopcommerce_config'])) {
+            try {
+                $exchange_rate = $GLOBALS['shopcommerce_config']->get_fresh_currency_exchange_rate($currency_code);
+
+                if ($exchange_rate !== null && $exchange_rate > 0) {
+                    $converted_price = $price * $exchange_rate;
+
+                    $this->logger->debug('Currency conversion successful', [
+                        'original_price' => $price,
+                        'currency_code' => $currency_code,
+                        'exchange_rate' => $exchange_rate,
+                        'converted_price' => $converted_price
+                    ]);
+
+                    return $converted_price;
+                } else {
+                    $this->logger->error('Failed to get exchange rate for currency', [
+                        'currency_code' => $currency_code,
+                        'exchange_rate' => $exchange_rate
+                    ]);
+                }
+            } catch (Exception $e) {
+                $this->logger->error('Exception during currency conversion', [
+                    'currency_code' => $currency_code,
+                    'error' => $e->getMessage()
+                ]);
+            }
+        } else {
+            $this->logger->error('ShopCommerce config not available for currency conversion');
+        }
+
+        // If we reach here, conversion failed - set absurdly high price for admin attention
+        $absurd_price = 999999999.99;
+
+        $this->logger->warning('Currency conversion failed, setting absurdly high price', [
+            'original_price' => $price,
+            'currency_code' => $currency_code,
+            'absurd_price' => $absurd_price,
+            'reason' => 'exchange_rate_unavailable'
+        ]);
+
+        return $absurd_price;
     }
 
     /**
@@ -467,10 +531,11 @@ class ShopCommerce_Product {
             }
         }
 
-        // Calculate price with markup using category code
-        $this->logger->debug('Calculating price with markup using category code', [$product_data]);
+        // Calculate price with markup using category code and currency conversion
+        $this->logger->debug('Calculating price with markup using category code and currency conversion', [$product_data]);
         $category_code = !empty($product_data['IdFamilia']) ? $product_data['IdFamilia'] : 0;
-        $calculated_price = $this->calculate_product_price($product_data['precio'], $category_code);
+        $currency_code = !empty($product_data['CurrencyDef']) ? $product_data['CurrencyDef'] : 'COP';
+        $calculated_price = $this->calculate_product_price($product_data['precio'], $category_code, $currency_code);
 
         // Get the actual markup percentage used
         $actual_markup_percentage = 15.00; // Default fallback
@@ -498,6 +563,7 @@ class ShopCommerce_Product {
                 '_external_provider_sync_date' => current_time('mysql'),
                 '_shopcommerce_sku' => $sku, // Store original SKU
                 '_shopcommerce_original_price' => $product_data['precio'], // Store original price
+                '_shopcommerce_original_currency' => $currency_code, // Store original currency
                 '_shopcommerce_markup_percentage' => $actual_markup_percentage, // Store actual markup percentage used
             ],
             'category_name' => null,
