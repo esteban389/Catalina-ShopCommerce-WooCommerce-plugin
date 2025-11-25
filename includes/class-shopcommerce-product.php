@@ -635,6 +635,9 @@ class ShopCommerce_Product {
             $wc_product->set_stock_quantity($mapped_data['stock_quantity']);
         }
 
+        // Apply tax settings
+        $this->apply_product_tax_settings($wc_product, $mapped_data, $brand);
+
         // Apply metadata
         foreach ($mapped_data['meta_data'] as $key => $value) {
             if ($value !== null) {
@@ -656,6 +659,84 @@ class ShopCommerce_Product {
             if ($product_id) {
                 $this->handle_image_update($wc_product, $mapped_data['image_url'], $mapped_data['name']);
             }
+        }
+    }
+
+    /**
+     * Determine tax class for a product
+     *
+     * @param WC_Product $wc_product WooCommerce product object
+     * @param array $mapped_data Mapped product data
+     * @param string $brand Brand name
+     * @return string|false Tax class slug to apply, or false if no tax class should be set
+     */
+    private function determine_tax_class($wc_product, $mapped_data, $brand) {
+        // TODO: Implement business logic to determine tax class based on:
+        // - Product category
+        // - Brand
+        // - Price range
+        // - Configuration settings
+        // - Other business rules
+        
+        // For now, return false to skip tax class setting
+        return false;
+    }
+
+    /**
+     * Apply tax settings to a WooCommerce product
+     *
+     * @param WC_Product $wc_product WooCommerce product object
+     * @param array $mapped_data Mapped product data
+     * @param string $brand Brand name
+     */
+    private function apply_product_tax_settings($wc_product, $mapped_data, $brand) {
+        try {
+            // Determine tax class first
+            $tax_class = $this->determine_tax_class($wc_product, $mapped_data, $brand);
+            
+            // If tax class is false, product should not be taxable
+            if ($tax_class === false) {
+                $tax_status = 'none';
+                
+                // Set tax status to 'none' (not taxable)
+                if (method_exists($wc_product, 'set_tax_status')) {
+                    $wc_product->set_tax_status($tax_status);
+                }
+                
+                $this->logger->debug('Product set to not taxable', [
+                    'product_id' => $wc_product->get_id(),
+                    'tax_status' => $tax_status,
+                    'brand' => $brand,
+                    'reason' => 'determine_tax_class returned false'
+                ]);
+            } else {
+                // Tax class determined, product should be taxable
+                $tax_status = get_option('shopcommerce_product_tax_status', 'taxable');
+                
+                // Set tax status on product
+                if (method_exists($wc_product, 'set_tax_status')) {
+                    $wc_product->set_tax_status($tax_status);
+                }
+                
+                // Apply tax class
+                if (method_exists($wc_product, 'set_tax_class')) {
+                    $wc_product->set_tax_class($tax_class);
+                }
+                
+                $this->logger->debug('Applied tax class to product', [
+                    'product_id' => $wc_product->get_id(),
+                    'tax_class' => $tax_class,
+                    'tax_status' => $tax_status,
+                    'brand' => $brand
+                ]);
+            }
+        } catch (Exception $e) {
+            // Log error but don't throw - tax setting is non-critical
+            $this->logger->warning('Error applying tax settings to product', [
+                'product_id' => $wc_product->get_id(),
+                'brand' => $brand,
+                'error' => $e->getMessage()
+            ]);
         }
     }
 
