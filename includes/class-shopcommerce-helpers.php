@@ -515,7 +515,7 @@ class ShopCommerce_Helpers
 
         $sanitized['Discount'] = isset($product_data['Descuento']) ? floatval($product_data['Descuento']) : 0;
 
-        $sanitazed['TributariClassification'] = isset($product_data['TributariClassification']) ? sanitize_text_field($product_data['TributariClassification']) : '';
+        $sanitized['TributariClassification'] = isset($product_data['TributariClassification']) ? sanitize_text_field($product_data['TributariClassification']) : '';
 
         return $sanitized;
     }

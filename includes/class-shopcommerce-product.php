@@ -668,17 +668,60 @@ class ShopCommerce_Product {
      * @param WC_Product $wc_product WooCommerce product object
      * @param array $mapped_data Mapped product data
      * @param string $brand Brand name
-     * @return string|false Tax class slug to apply, or false if no tax class should be set
+     * @return string|false|true Tax class slug to apply, false if not taxable, or true if product already has tax class (don't modify)
      */
     private function determine_tax_class($wc_product, $mapped_data, $brand) {
-        // TODO: Implement business logic to determine tax class based on:
-        // - Product category
-        // - Brand
-        // - Price range
-        // - Configuration settings
-        // - Other business rules
+        // Check if product already has a tax class set
+        if (method_exists($wc_product, 'get_tax_class')) {
+            $existing_tax_class = $wc_product->get_tax_class();
+            // If product has a tax class (not empty and not 'standard'), don't modify it
+            if (!empty($existing_tax_class) && $existing_tax_class !== 'standard') {
+                $this->logger->debug('Product already has tax class, skipping modification', [
+                    'product_id' => $wc_product->get_id(),
+                    'existing_tax_class' => $existing_tax_class,
+                    'brand' => $brand
+                ]);
+                return true;
+            }
+        }
         
-        // For now, return false to skip tax class setting
+        // Get product name for checking
+        $product_name = $mapped_data['name'] ?? '';
+        if (empty($product_name) && method_exists($wc_product, 'get_name')) {
+            $product_name = $wc_product->get_name();
+        }
+        
+        // Get category name
+        $category_name = $mapped_data['category_name'] ?? '';
+        
+        // Get price
+        $price = $mapped_data['regular_price'] ?? 0;
+        if (empty($price) && method_exists($wc_product, 'get_regular_price')) {
+            $price = floatval($wc_product->get_regular_price());
+        }
+        
+        // Check conditions: (category is "PORTATILES" OR name contains "Todo en uno") AND price > 2,490,000
+        $is_portatiles = !empty($category_name) && strtoupper(trim($category_name)) === 'PORTATILES';
+        $contains_todo_en_uno = !empty($product_name) && stripos($product_name, 'Todo en uno') !== false;
+        $price_threshold = 2490000.00;
+        $meets_price_condition = floatval($price) > $price_threshold;
+        
+        // If conditions are met, return empty string for default WooCommerce tax class
+        if (($is_portatiles || $contains_todo_en_uno) && $meets_price_condition) {
+            $this->logger->debug('Product meets tax conditions', [
+                'product_id' => $wc_product->get_id(),
+                'category_name' => $category_name,
+                'product_name' => $product_name,
+                'price' => $price,
+                'is_portatiles' => $is_portatiles,
+                'contains_todo_en_uno' => $contains_todo_en_uno,
+                'meets_price_condition' => $meets_price_condition,
+                'brand' => $brand
+            ]);
+            return ''; // Empty string = default WooCommerce tax class
+        }
+        
+        // Default: not taxable
         return false;
     }
 
@@ -693,6 +736,15 @@ class ShopCommerce_Product {
         try {
             // Determine tax class first
             $tax_class = $this->determine_tax_class($wc_product, $mapped_data, $brand);
+            
+            // If return value is true, product already has tax class - don't modify
+            if ($tax_class === true) {
+                $this->logger->debug('Product tax class preserved (already set)', [
+                    'product_id' => $wc_product->get_id(),
+                    'brand' => $brand
+                ]);
+                return;
+            }
             
             // If tax class is false, product should not be taxable
             if ($tax_class === false) {
@@ -710,7 +762,7 @@ class ShopCommerce_Product {
                     'reason' => 'determine_tax_class returned false'
                 ]);
             } else {
-                // Tax class determined, product should be taxable
+                // Tax class determined (string), product should be taxable
                 $tax_status = get_option('shopcommerce_product_tax_status', 'taxable');
                 
                 // Set tax status on product
@@ -718,14 +770,14 @@ class ShopCommerce_Product {
                     $wc_product->set_tax_status($tax_status);
                 }
                 
-                // Apply tax class
+                // Apply tax class (empty string = default WooCommerce tax class)
                 if (method_exists($wc_product, 'set_tax_class')) {
                     $wc_product->set_tax_class($tax_class);
                 }
                 
                 $this->logger->debug('Applied tax class to product', [
                     'product_id' => $wc_product->get_id(),
-                    'tax_class' => $tax_class,
+                    'tax_class' => $tax_class === '' ? '(default)' : $tax_class,
                     'tax_status' => $tax_status,
                     'brand' => $brand
                 ]);
