@@ -41,8 +41,9 @@ class ShopCommerce_Product {
      * @return float Calculated price with markup and currency conversion
      */
     private function calculate_product_price($original_price, $category_code, $currency_code = 'COP') {
-        // Convert price to COP if needed
-        $price_in_cop = $this->convert_to_cop($original_price, $currency_code);
+        // Convert price to COP if needed (turns out that the price is already in COP 😭)
+        //$price_in_cop = $this->convert_to_cop($original_price, $currency_code);
+        $price_in_cop = $original_price;
 
         // Get markup percentage from database configuration
         $markup_percentage = 0.15; // Default fallback
@@ -66,12 +67,19 @@ class ShopCommerce_Product {
         // Round to 2 decimal places
         $final_price = round($final_price, 2);
 
+        // Round to nearest thousand for prices >= 10,000 COP
+        $price_before_thousand_rounding = $final_price;
+        if ($final_price >= 10000) {
+            $final_price = round($final_price, -3);
+        }
+
         $this->logger->debug('Price calculated with currency conversion', [
             'original_price' => $original_price,
             'currency_code' => $currency_code,
             'price_in_cop' => $price_in_cop,
             'category_code' => $category_code,
             'markup_percentage' => $markup_percentage,
+            'price_before_thousand_rounding' => $price_before_thousand_rounding,
             'final_price' => $final_price
         ]);
 
@@ -565,9 +573,11 @@ class ShopCommerce_Product {
                 '_shopcommerce_original_price' => $product_data['precio'], // Store original price
                 '_shopcommerce_original_currency' => $currency_code, // Store original currency
                 '_shopcommerce_markup_percentage' => $actual_markup_percentage, // Store actual markup percentage used
+                '_shopcommerce_tributari_classification' => $product_data['TributariClassification'], // Store tributari classification
             ],
             'category_name' => null,
             'image_url' => null,
+            'tributari_classification' => null,
         ];
 
         // Add additional metadata from ShopCommerce if available
@@ -598,6 +608,11 @@ class ShopCommerce_Product {
             $mapped_data['category_name'] = $product_data['CategoriaDescripcion'];
         } elseif (!empty($product_data['Categoria'])) {
             $mapped_data['category_name'] = $product_data['Categoria'];
+        }
+
+        // Handle tributari classification
+        if (!empty($product_data['TributariClassification'])) {
+            $mapped_data['tributari_classification'] = $product_data['TributariClassification'];
         }
 
         // Handle product image
@@ -699,10 +714,12 @@ class ShopCommerce_Product {
         if (empty($price) && method_exists($wc_product, 'get_regular_price')) {
             $price = floatval($wc_product->get_regular_price());
         }
+
+        if($mapped_data['tributari_classification'] === 'EXCLUIDO') {
         
-        // Check conditions: (category is "PORTATILES" OR name contains "Todo en uno") AND price > 2,490,000
-        $is_portatiles = !empty($category_name) && strtoupper(trim($category_name)) === 'PORTATILES';
-        $contains_todo_en_uno = !empty($product_name) && stripos($product_name, 'Todo en uno') !== false;
+        // Check conditions: (category is "PORTATILES" OR name contains "Todo en uno") AND price > 2,490,000 OR the name contains either ("Portatil" or "Portátil")
+        $is_portatiles = !empty($category_name) && strtoupper(trim($category_name)) === 'PORTATILES' || stripos(strtolower($product_name), 'portatil') !== false || stripos(strtolower($product_name), 'portátil') !== false;
+        $contains_todo_en_uno = !empty($product_name) && stripos(strtolower($product_name), 'todo en uno') !== false;
         $price_threshold = 2490000.00;
         $meets_price_condition = floatval($price) > $price_threshold;
         
@@ -720,6 +737,8 @@ class ShopCommerce_Product {
             ]);
             return ''; // Empty string = default WooCommerce tax class
         }
+        }
+
         
         // Default: not taxable
         return false;
@@ -749,15 +768,21 @@ class ShopCommerce_Product {
             // If tax class is false, product should not be taxable
             if ($tax_class === false) {
                 $tax_status = 'none';
+                $tax_class = 'Tasa cero';
                 
                 // Set tax status to 'none' (not taxable)
                 if (method_exists($wc_product, 'set_tax_status')) {
                     $wc_product->set_tax_status($tax_status);
                 }
                 
+                if (method_exists($wc_product, 'set_tax_class')) {
+                    $wc_product->set_tax_class($tax_class);
+                }
+                
                 $this->logger->debug('Product set to not taxable', [
                     'product_id' => $wc_product->get_id(),
                     'tax_status' => $tax_status,
+                    'tax_class' => $tax_class,
                     'brand' => $brand,
                     'reason' => 'determine_tax_class returned false'
                 ]);

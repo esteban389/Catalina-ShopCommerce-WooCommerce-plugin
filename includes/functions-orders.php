@@ -504,14 +504,15 @@ function shopcommerce_create_external_order_from_local_order($order, $logger = n
 
         $requestBody = [
                 'listaPedido' => [
-                        'AccountNum' => $shipping_info['shipping_address']['cc/nit'],
+                        'AccountNum' => $shipping_info['shipping_address']['cc/nit'], // TODO: this is the company's nit,
+                        'ClienteEntrega' => $shipping_info['shipping_address']['cc/nit'],
                         'NombreCLienteEntrega'=> $shipping_info['shipping_address']['first_name'] . ' ' . $shipping_info['shipping_address']['last_name'],
                         'TelefonoEntrega' => $shipping_info['shipping_address']['phone_number'],
                         'DireccionEntrega' => $shipping_info['shipping_address']['address_1'] . ' ' . $shipping_info['shipping_address']['address_2'],
                         'StateId' => $shipping_info['shipping_address']['state_id'],
                         'CountyId' => $shipping_info['shipping_address']['county_id'],
                         'RecogerEnSitio' => 0,
-                        'EntregaUsuarioFinal' => 0,
+                        'EntregaUsuarioFinal' => 1,
                         "listaPedidoDetalle" => $listaPedidosDetalle
                 ]
         ];
