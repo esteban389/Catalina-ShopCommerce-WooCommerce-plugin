@@ -14,7 +14,7 @@ class ShopCommerce_API {
     /**
      * API base URL
      */
-    const BASE_URL = 'https://shopcommerce.mps.com.co:7965/';
+    const BASE_URL = 'https://shopcommerce.mps.com.co:9236/';
 
     /**
      * API endpoints
@@ -33,8 +33,8 @@ class ShopCommerce_API {
     /**
      * API credentials
      */
-    private $username = 'pruebas@hekalsoluciones.com';
-    private $password = 'Mo3rdoadzy1M';
+    private $username = 'cprieto@hekalsoluciones.com';
+    private $password = '2712PqBnGHHM';
 
     /**
      * Logger instance

@@ -714,8 +714,6 @@ class ShopCommerce_Product {
         if (empty($price) && method_exists($wc_product, 'get_regular_price')) {
             $price = floatval($wc_product->get_regular_price());
         }
-
-        if($mapped_data['tributari_classification'] === 'EXCLUIDO') {
         
         // Check conditions: (category is "PORTATILES" OR name contains "Todo en uno") AND price > 2,490,000 OR the name contains either ("Portatil" or "Portátil")
         $is_portatiles = !empty($category_name) && strtoupper(trim($category_name)) === 'PORTATILES' || stripos(strtolower($product_name), 'portatil') !== false || stripos(strtolower($product_name), 'portátil') !== false;
@@ -736,7 +734,6 @@ class ShopCommerce_Product {
                 'brand' => $brand
             ]);
             return ''; // Empty string = default WooCommerce tax class
-        }
         }
 
         

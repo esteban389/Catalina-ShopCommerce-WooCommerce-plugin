@@ -539,7 +539,37 @@ function shopcommerce_create_external_order_from_local_order($order, $logger = n
         }
         $response = $apiHandler->realizarPedido($requestBody);
 
+        // Handle null response (API error)
+        if ($response === null) {
+            $error_response = [
+                'success' => false,
+                'message' => 'API request failed - no response received',
+                'error' => 'null_response'
+            ];
+
+            // Store error response as metadata
+            $order->add_meta_data('_shopcommerce_api_status', 'error', true);
+            $order->add_meta_data('_shopcommerce_api_response', json_encode($error_response), true);
+            $order->add_meta_data('_shopcommerce_api_error_date', current_time('mysql'), true);
+            $order->save();
+
+            if ($logger) {
+                $logger->error('Failed to create external order via API - null response', [
+                    'order_id' => $order->get_id(),
+                    'order_number' => $order->get_order_number(),
+                    'function' => 'shopcommerce_create_external_order_from_local_order'
+                ]);
+            }
+            return false;
+        }
+
         if(!$response['success']) {
+            // Store error response as metadata
+            $order->add_meta_data('_shopcommerce_api_status', 'error', true);
+            $order->add_meta_data('_shopcommerce_api_response', json_encode($response), true);
+            $order->add_meta_data('_shopcommerce_api_error_date', current_time('mysql'), true);
+            $order->save();
+
             if ($logger) {
                 $logger->error('Failed to create external order via API', [
                     'order_id' => $order->get_id(),
@@ -550,11 +580,18 @@ function shopcommerce_create_external_order_from_local_order($order, $logger = n
             }
             return false;
         } else {
+            // Store success response as metadata
+            $order->add_meta_data('_shopcommerce_api_status', 'success', true);
+            $order->add_meta_data('_shopcommerce_api_response', json_encode($response), true);
+            $order->add_meta_data('_shopcommerce_api_success_date', current_time('mysql'), true);
+            $order->add_meta_data('_shopcommerce_external_order_id', $response['pedido'] ?? null, true);
+            $order->save();
+
             if ($logger) {
                 $logger->info('Successfully created external order via API', [
                     'order_id' => $order->get_id(),
                     'order_number' => $order->get_order_number(),
-                    'external_order_id' => $response['data']['OrderId'] ?? null,
+                    'external_order_id' => $response['pedido'] ?? null,
                     'response' => $response,
                     'function' => 'shopcommerce_create_external_order_from_local_order'
                 ]);
@@ -562,6 +599,19 @@ function shopcommerce_create_external_order_from_local_order($order, $logger = n
         }
 
     }catch (Exception $e) {
+        // Store exception error as metadata
+        $exception_response = [
+            'success' => false,
+            'message' => $e->getMessage(),
+            'error' => 'exception',
+            'exception_type' => get_class($e)
+        ];
+
+        $order->add_meta_data('_shopcommerce_api_status', 'error', true);
+        $order->add_meta_data('_shopcommerce_api_response', json_encode($exception_response), true);
+        $order->add_meta_data('_shopcommerce_api_error_date', current_time('mysql'), true);
+        $order->save();
+
         if ($logger) {
             $logger->error('Error mapping product data for external order creation', [
                 'order_id' => $order->get_id(),
@@ -662,13 +712,20 @@ function shopcommerce_handle_order_completion($order_id) {
         // Get statistics before adding metadata
         $stats = shopcommerce_get_order_external_provider_stats($order);
 
-        // Add metadata to identify order with external provider products
-        $order->add_meta_data('_has_shopcommerce_products', 'yes', true);
+        // Check if metadata already exists (added during order creation)
+        $has_metadata = $order->get_meta('_has_shopcommerce_products', true);
+
+        if (!$has_metadata) {
+            // Add metadata if it doesn't exist (for orders created before this feature)
+            $order->add_meta_data('_has_shopcommerce_products', 'yes', true);
+            $order->add_meta_data('_shopcommerce_product_count', $stats['total_products'], true);
+            $order->add_meta_data('_shopcommerce_brands', implode(', ', $stats['brands']), true);
+            $order->add_meta_data('_shopcommerce_total_value', $stats['total_value'], true);
+            $order->add_meta_data('_shopcommerce_total_quantity', $stats['total_quantity'], true);
+        }
+
+        // Always add/update the processing timestamp
         $order->add_meta_data('_shopcommerce_order_processed', current_time('mysql'), true);
-        $order->add_meta_data('_shopcommerce_product_count', $stats['total_products'], true);
-        $order->add_meta_data('_shopcommerce_brands', implode(', ', $stats['brands']), true);
-        $order->add_meta_data('_shopcommerce_total_value', $stats['total_value'], true);
-        $order->add_meta_data('_shopcommerce_total_quantity', $stats['total_quantity'], true);
 
         // Save the metadata
         $order->save();
@@ -681,7 +738,8 @@ function shopcommerce_handle_order_completion($order_id) {
                 'product_count' => $stats['total_products'],
                 'brands' => $stats['brands'],
                 'total_value' => $stats['total_value'],
-                'total_quantity' => $stats['total_quantity']
+                'total_quantity' => $stats['total_quantity'],
+                'metadata_already_existed' => !empty($has_metadata)
             ]);
 
             $logger->log_activity(
@@ -757,6 +815,17 @@ function shopcommerce_handle_order_creation($order_id) {
     if (shopcommerce_order_has_external_provider_products($order)) {
         $stats = shopcommerce_get_order_external_provider_stats($order);
 
+        // Add metadata to identify order with external provider products
+        $order->add_meta_data('_has_shopcommerce_products', 'yes', true);
+        $order->add_meta_data('_shopcommerce_product_count', $stats['total_products'], true);
+        $order->add_meta_data('_shopcommerce_brands', implode(', ', $stats['brands']), true);
+        $order->add_meta_data('_shopcommerce_total_value', $stats['total_value'], true);
+        $order->add_meta_data('_shopcommerce_total_quantity', $stats['total_quantity'], true);
+        $order->add_meta_data('_shopcommerce_order_created_date', current_time('mysql'), true);
+
+        // Save the metadata
+        $order->save();
+
         if ($logger) {
             $log_message = sprintf(
                 'Order %d created with %d external provider product(s)',
@@ -777,12 +846,15 @@ function shopcommerce_handle_order_creation($order_id) {
             $logger->log_activity(
                 'order_created_with_external_products',
                 sprintf(
-                    'Order %s created with %d external provider products',
+                    'Order %s created with %d external provider products (%d brands, $%.2f)',
                     $order->get_order_number(),
-                    $stats['total_products']
+                    $stats['total_products'],
+                    count($stats['brands']),
+                    $stats['total_value']
                 ),
                 [
                     'order_id' => $order_id,
+                    'order_number' => $order->get_order_number(),
                     'product_count' => $stats['total_products'],
                     'brands' => $stats['brands'],
                     'total_value' => $stats['total_value'],
@@ -892,12 +964,12 @@ function shopcommerce_get_order_shopcommerce_metadata($order) {
 
     $metadata = [
         'has_shopcommerce_products' => $order->get_meta('_has_shopcommerce_products') === 'yes',
-        'created_timestamp' => $order->get_meta('_shopcommerce_order_created'),
-        'processed_timestamp' => $order->get_meta('_shopcommerce_order_processed'),
-        'product_count' => intval($order->get_meta('_shopcommerce_product_count', 0)),
-        'brands' => $order->get_meta('_shopcommerce_brands', ''),
-        'total_value' => floatval($order->get_meta('_shopcommerce_total_value', 0)),
-        'total_quantity' => intval($order->get_meta('_shopcommerce_total_quantity', 0)),
+        'created_timestamp' => $order->get_meta('_shopcommerce_order_created_date', true),
+        'processed_timestamp' => $order->get_meta('_shopcommerce_order_processed', true),
+        'product_count' => intval($order->get_meta('_shopcommerce_product_count', true) ?: 0),
+        'brands' => $order->get_meta('_shopcommerce_brands', true) ?: '',
+        'total_value' => floatval($order->get_meta('_shopcommerce_total_value', true) ?: 0),
+        'total_quantity' => intval($order->get_meta('_shopcommerce_total_quantity', true) ?: 0),
     ];
 
     // Parse brands string into array
@@ -1380,6 +1452,107 @@ function shopcommerce_custom_shipping_fields_css() {
     <?php
 }
 add_action('wp_head', 'shopcommerce_custom_shipping_fields_css');
+
+/**
+ * Get ShopCommerce API response metadata from order
+ *
+ * @param int|WC_Order $order Order ID or order object
+ * @return array API response metadata including status, response data, and timestamps
+ */
+function shopcommerce_get_order_api_response_metadata($order) {
+    if (is_numeric($order)) {
+        $order = wc_get_order($order);
+    }
+
+    if (!$order) {
+        return [];
+    }
+
+    $api_status = $order->get_meta('_shopcommerce_api_status', true);
+    $api_response_json = $order->get_meta('_shopcommerce_api_response', true);
+
+    // Decode the response JSON
+    $api_response = null;
+    if (!empty($api_response_json)) {
+        $api_response = json_decode($api_response_json, true);
+    }
+
+    $metadata = [
+        'status' => $api_status ?: 'pending',
+        'response' => $api_response,
+        'response_raw' => $api_response_json,
+        'external_order_id' => $order->get_meta('_shopcommerce_external_order_id', true),
+        'success_date' => $order->get_meta('_shopcommerce_api_success_date', true),
+        'error_date' => $order->get_meta('_shopcommerce_api_error_date', true),
+    ];
+
+    // Add parsed response details
+    if ($api_response && is_array($api_response)) {
+        $metadata['success'] = $api_response['success'] ?? false;
+        $metadata['message'] = $api_response['message'] ?? '';
+        $metadata['pedido'] = $api_response['pedido'] ?? null;
+        $metadata['error'] = $api_response['error'] ?? null;
+    }
+
+    return $metadata;
+}
+
+/**
+ * Check if order has been sent to ShopCommerce API
+ *
+ * @param int|WC_Order $order Order ID or order object
+ * @return bool True if order has API response metadata
+ */
+function shopcommerce_order_has_api_response($order) {
+    if (is_numeric($order)) {
+        $order = wc_get_order($order);
+    }
+
+    if (!$order) {
+        return false;
+    }
+
+    $api_status = $order->get_meta('_shopcommerce_api_status', true);
+    return !empty($api_status);
+}
+
+/**
+ * Check if order was successfully sent to ShopCommerce API
+ *
+ * @param int|WC_Order $order Order ID or order object
+ * @return bool True if order was successfully sent to API
+ */
+function shopcommerce_order_api_success($order) {
+    if (is_numeric($order)) {
+        $order = wc_get_order($order);
+    }
+
+    if (!$order) {
+        return false;
+    }
+
+    $api_status = $order->get_meta('_shopcommerce_api_status', true);
+    return $api_status === 'success';
+}
+
+/**
+ * Check if order failed to send to ShopCommerce API
+ *
+ * @param int|WC_Order $order Order ID or order object
+ * @return bool True if order failed to send to API
+ */
+function shopcommerce_order_api_error($order) {
+    if (is_numeric($order)) {
+        $order = wc_get_order($order);
+    }
+
+    if (!$order) {
+        return false;
+    }
+
+    $api_status = $order->get_meta('_shopcommerce_api_status', true);
+    return $api_status === 'error';
+}
 
 /**
  * Scheduled log clearing function

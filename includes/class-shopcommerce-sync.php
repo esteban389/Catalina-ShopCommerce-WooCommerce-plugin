@@ -269,6 +269,94 @@ class ShopCommerce_Sync {
     }
 
     /**
+     * Execute sync for a specific job immediately (synchronously, not in batches)
+     *
+     * @param array $job Job configuration
+     * @return array Sync results
+     */
+    public function execute_sync_for_job_immediate($job) {
+        $brand = $job['brand'];
+        $categories = isset($job['categories']) && is_array($job['categories']) ? $job['categories'] : [];
+
+        $this->logger->info('Starting immediate sync for job', [
+            'brand' => $brand,
+            'categories' => $categories,
+            'categories_count' => count($categories),
+            'mode' => 'immediate'
+        ]);
+
+        try {
+            // Get catalog from API
+            $catalog = $this->api_client->get_catalog($brand, $categories);
+            if (!$catalog) {
+                throw new Exception('Failed to retrieve catalog from API');
+            }
+
+            if (!is_array($catalog) || empty($catalog)) {
+                $this->logger->info('Empty catalog received', [
+                    'brand' => $brand,
+                    'categories' => $categories
+                ]);
+                return [
+                    'success' => true,
+                    'catalog_count' => 0,
+                    'processed_count' => 0,
+                    'created' => 0,
+                    'updated' => 0,
+                    'errors' => 0
+                ];
+            }
+
+            $this->logger->info('Catalog retrieved successfully, processing immediately', [
+                'brand' => $brand,
+                'categories' => $categories,
+                'catalog_count' => count($catalog)
+            ]);
+
+            // Process catalog immediately (synchronously) - process all products at once
+            $results = $this->product_handler->process_batch($catalog, $brand);
+            
+            // Format results to match expected structure
+            $formatted_results = [
+                'processed_count' => $results['total'] ?? 0,
+                'created' => $results['created'] ?? 0,
+                'updated' => $results['updated'] ?? 0,
+                'errors' => $results['errors'] ?? 0,
+                'skipped' => $results['skipped'] ?? 0,
+            ];
+
+            // Log sync completion
+            $this->logger->log_activity('sync_completed_immediate', 'Immediate sync completed for brand: ' . $brand, [
+                'brand' => $brand,
+                'categories' => $categories,
+                'products_count' => count($catalog),
+                'results' => $formatted_results
+            ]);
+
+            return array_merge($formatted_results, [
+                'success' => true,
+                'catalog_count' => count($catalog),
+                'mode' => 'immediate'
+            ]);
+
+        } catch (Exception $e) {
+            $this->logger->error('Error in immediate sync execution', [
+                'brand' => $brand,
+                'categories' => $categories,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+
+            return [
+                'success' => false,
+                'error' => $e->getMessage(),
+                'brand' => $brand,
+                'categories' => $categories
+            ];
+        }
+    }
+
+    /**
      * Process catalog in batches
      *
      * @param array $catalog Product catalog data

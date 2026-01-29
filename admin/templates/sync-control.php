@@ -29,6 +29,19 @@ if (!defined('ABSPATH')) {
                     </button>
                 </div>
 
+                <!-- TEMPORARY: Immediate Sync (Remove before production) -->
+                <div class="sync-option" style="border: 2px solid #ffb900; background: #fff8e5;">
+                    <h3 style="color: #d63638;">⚠️ Immediate Sync (Temporary)</h3>
+                    <p style="color: #d63638; font-weight: bold;">WARNING: This is a temporary feature for development. Remove before production!</p>
+                    <p>Execute the next job immediately and synchronously (processes entire catalog at once)</p>
+                    <button type="button" class="button button-primary" id="run-immediate-sync-btn" style="background: #d63638; border-color: #d63638;">
+                        Run Immediate Sync
+                    </button>
+                    <p style="font-size: 11px; color: #666; margin-top: 10px;">
+                        See REMOVE_WEB_SYNC_README.md for removal instructions
+                    </p>
+                </div>
+
                 <div class="sync-option">
                     <h3>Full Sync</h3>
                     <p>Run sync for all configured brands (may take a long time)</p>
@@ -417,6 +430,59 @@ jQuery(document).ready(function($) {
     // Run next job
     $('#run-next-job-btn').on('click', function() {
         runSync(false);
+    });
+
+    // TEMPORARY: Run immediate sync
+    $('#run-immediate-sync-btn').on('click', function() {
+        if (!confirm('WARNING: This will process the entire catalog synchronously, which may take a long time and could timeout. Continue?')) {
+            return;
+        }
+
+        var $btn = $(this);
+        var $results = $('#sync-results-container');
+        var originalText = $btn.text();
+        
+        $btn.prop('disabled', true).text('Processing...');
+        $results.html('<p>Running immediate sync (this may take several minutes)...</p>');
+
+        $.ajax({
+            url: shopcommerce_admin.ajax_url,
+            type: 'POST',
+            timeout: 300000, // 5 minutes timeout
+            data: {
+                action: 'shopcommerce_run_immediate_sync',
+                nonce: shopcommerce_admin.nonce
+            },
+            success: function(response) {
+                $btn.prop('disabled', false).text(originalText);
+                if (response.success) {
+                    var html = '<div class="sync-results">';
+                    html += '<h3 style="color: #46b450;">✓ Immediate Sync Completed</h3>';
+                    html += '<div class="result-stats">';
+                    html += '<div class="result-stat"><strong>Brand:</strong> ' + (response.data.brand || 'N/A') + '</div>';
+                    html += '<div class="result-stat"><strong>Catalog Count:</strong> ' + (response.data.catalog_count || 0) + '</div>';
+                    html += '<div class="result-stat"><strong>Processed:</strong> ' + (response.data.processed_count || 0) + '</div>';
+                    html += '<div class="result-stat"><strong>Created:</strong> ' + (response.data.created || 0) + '</div>';
+                    html += '<div class="result-stat"><strong>Updated:</strong> ' + (response.data.updated || 0) + '</div>';
+                    html += '<div class="result-stat"><strong>Errors:</strong> ' + (response.data.errors || 0) + '</div>';
+                    html += '<div class="result-stat"><strong>Skipped:</strong> ' + (response.data.skipped || 0) + '</div>';
+                    html += '<div class="result-stat"><strong>Execution Time:</strong> ' + (response.data.execution_time || 0) + ' seconds</div>';
+                    html += '</div>';
+                    html += '</div>';
+                    $results.html(html);
+                } else {
+                    $results.html('<p class="error">Immediate sync failed: ' + (response.data.error || response.data.message || 'Unknown error') + '</p>');
+                }
+            },
+            error: function(xhr, status, error) {
+                $btn.prop('disabled', false).text(originalText);
+                if (status === 'timeout') {
+                    $results.html('<p class="error">Sync timed out after 5 minutes. The sync may still be processing in the background. Check logs for details.</p>');
+                } else {
+                    $results.html('<p class="error">Sync failed due to network error: ' + error + '</p>');
+                }
+            }
+        });
     });
 
     // Run full sync

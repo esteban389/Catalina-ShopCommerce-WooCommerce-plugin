@@ -382,6 +382,9 @@ function shopcommerce_register_ajax_handlers() {
     // Synchronous brand sync
     add_action('wp_ajax_shopcommerce_sync_brand_synchronously', 'shopcommerce_ajax_sync_brand_synchronously');
 
+    // TEMPORARY: Immediate sync endpoint (CLI-only in production)
+    add_action('wp_ajax_shopcommerce_run_immediate_sync', 'shopcommerce_ajax_run_immediate_sync');
+
     // Get queue status
     add_action('wp_ajax_shopcommerce_queue_status', 'shopcommerce_ajax_queue_status');
 
@@ -512,6 +515,52 @@ function shopcommerce_ajax_run_sync() {
     }
 
     wp_send_json_success($results);
+}
+
+/**
+ * TEMPORARY: AJAX handler for immediate sync (next job in queue)
+ * 
+ * WARNING: This is a temporary endpoint for development/testing.
+ * Remove this function and its action registration before production deployment.
+ * See REMOVE_WEB_SYNC_README.md for removal instructions.
+ */
+function shopcommerce_ajax_run_immediate_sync() {
+    check_ajax_referer('shopcommerce_admin_nonce', 'nonce');
+
+    if (!current_user_can('manage_options')) {
+        wp_send_json_error(['message' => 'Insufficient permissions']);
+    }
+
+    // Set execution limits for web execution
+    @set_time_limit(300); // 5 minutes max for web
+    ini_set('memory_limit', '512M');
+
+    $sync_handler = isset($GLOBALS['shopcommerce_sync']) ? $GLOBALS['shopcommerce_sync'] : null;
+    $cron_scheduler = isset($GLOBALS['shopcommerce_cron']) ? $GLOBALS['shopcommerce_cron'] : null;
+
+    if (!$sync_handler || !$cron_scheduler) {
+        wp_send_json_error(['message' => 'Sync handler or cron scheduler not available']);
+    }
+
+    // Get next job
+    $job = $cron_scheduler->get_next_job();
+    if (!$job) {
+        wp_send_json_error(['message' => 'No jobs available for sync']);
+    }
+
+    // Execute immediate sync
+    $start_time = microtime(true);
+    $results = $sync_handler->execute_sync_for_job_immediate($job);
+    $execution_time = round(microtime(true) - $start_time, 2);
+
+    // Add execution time to results
+    $results['execution_time'] = $execution_time;
+
+    if ($results['success']) {
+        wp_send_json_success($results);
+    } else {
+        wp_send_json_error($results);
+    }
 }
 
 /**
@@ -1542,6 +1591,10 @@ function shopcommerce_ajax_get_product_details() {
                 <tr>
                     <th>ShopCommerce SKU</th>
                     <td><?php echo esc_html($shopcommerce_metadata['shopcommerce_sku'] ?: 'N/A'); ?></td>
+                </tr>
+                <tr>
+                    <th>Tributari Classification</th>
+                    <td><?php echo esc_html($shopcommerce_metadata['tributari_classification'] ?: 'N/A'); ?></td>
                 </tr>
                 <tr>
                     <th>Last Sync Date</th>
